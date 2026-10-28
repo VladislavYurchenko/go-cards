@@ -1,0 +1,1245 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#070B10">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#D9E1E8">
+<title>Go-лента</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Onest:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap">
+<style>
+/* Layout: вертикальная лента во весь экран, одна карточка — один вопрос; на широком экране лента идёт колонкой по центру */
+:root {
+  --ground: #070B10;
+  --text: #EDF2F7;
+  --muted: #9AA8B6;
+  --line: rgba(237, 242, 247, .14);
+  --glass: rgba(9, 13, 19, .62);
+  --chip: rgba(237, 242, 247, .08);
+  --btn: rgba(237, 242, 247, .07);
+  --btn-line: rgba(237, 242, 247, .2);
+  --btn-hover: rgba(237, 242, 247, .13);
+  --drawer: #111821;
+  --scrim: rgba(3, 6, 10, .62);
+  --shadow: rgba(0, 0, 0, .45);
+  --ok: #3BD18A;
+  --ok-soft: rgba(59, 209, 138, .16);
+  --bad: #FF5A78;
+  --bad-soft: rgba(255, 90, 120, .16);
+  --on-bad: #1A0409;
+  --half: #FFB547;
+  --pane-l1: .31;
+  --pane-l2: .15;
+  --pane-c: .075;
+  --acc-l: .82;
+  --acc-c: .13;
+  --on-acc: #081016;
+  --code-bg: #0A1016;
+  --code-fg: #DCE6EE;
+  --code-dim: #71849A;
+  --code-line: rgba(220, 230, 238, .1);
+  --syn-kw: #FF8FB1;
+  --syn-str: #A9E178;
+  --syn-num: #FFC66D;
+  --syn-fn: #7CC7FF;
+  --syn-type: #C9AEFF;
+  --term-err: #FF7F96;
+  --font-display: "Unbounded", "Arial Black", system-ui, sans-serif;
+  --font-body: "Onest", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --col: 460px;
+  --bar-h: 52px;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --ground: #D9E1E8; --text: #0F1720; --muted: #4D5C6A; --line: rgba(15, 23, 32, .13);
+    --glass: rgba(247, 249, 251, .74); --chip: rgba(15, 23, 32, .06); --btn: rgba(255, 255, 255, .72);
+    --btn-line: rgba(15, 23, 32, .17); --btn-hover: #FFFFFF; --drawer: #F7F9FB; --scrim: rgba(15, 23, 32, .38);
+    --shadow: rgba(15, 23, 32, .18); --ok: #0C8A54; --ok-soft: rgba(12, 138, 84, .13); --bad: #D3264F;
+    --bad-soft: rgba(211, 38, 79, .11); --on-bad: #FFFFFF; --half: #A86200; --pane-l1: .975; --pane-l2: .905;
+    --pane-c: .04; --acc-l: .5; --acc-c: .16; --on-acc: #FFFFFF; color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --ground: #D9E1E8; --text: #0F1720; --muted: #4D5C6A; --line: rgba(15, 23, 32, .13);
+  --glass: rgba(247, 249, 251, .74); --chip: rgba(15, 23, 32, .06); --btn: rgba(255, 255, 255, .72);
+  --btn-line: rgba(15, 23, 32, .17); --btn-hover: #FFFFFF; --drawer: #F7F9FB; --scrim: rgba(15, 23, 32, .38);
+  --shadow: rgba(15, 23, 32, .18); --ok: #0C8A54; --ok-soft: rgba(12, 138, 84, .13); --bad: #D3264F;
+  --bad-soft: rgba(211, 38, 79, .11); --on-bad: #FFFFFF; --half: #A86200; --pane-l1: .975; --pane-l2: .905;
+  --pane-c: .04; --acc-l: .5; --acc-c: .16; --on-acc: #FFFFFF; color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; overflow: hidden; background: var(--ground); color: var(--text);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+}
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; touch-action: manipulation; }
+button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+#app { position: fixed; inset: 0; }
+#feed {
+  position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden;
+  scroll-snap-type: y mandatory; overscroll-behavior-y: contain; scrollbar-width: none;
+}
+#feed::-webkit-scrollbar { display: none; }
+.card { height: 100%; scroll-snap-align: start; scroll-snap-stop: always; display: flex; justify-content: center; }
+.panel {
+  --acc: oklch(var(--acc-l) var(--acc-c) var(--h));
+  position: relative; width: 100%; max-width: var(--col); height: 100%; overflow: hidden;
+  background: linear-gradient(168deg,
+    oklch(var(--pane-l1) var(--pane-c) var(--h)) 0%,
+    oklch(var(--pane-l2) calc(var(--pane-c) * .7) var(--h)) 74%);
+}
+.inner {
+  height: 100%; overflow-y: auto; overscroll-behavior-y: auto; scrollbar-width: thin;
+  display: flex; flex-direction: column; gap: 16px;
+  padding-top: calc(var(--bar-h) + env(safe-area-inset-top, 0px) + 14px);
+  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.body { margin-block: auto; display: grid; gap: 14px; min-width: 0; }
+
+.head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.ava {
+  flex: none; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
+  font: 600 12.5px/1 var(--font-mono); color: var(--acc); background: var(--chip); border: 1.5px solid var(--acc);
+}
+.who { min-width: 0; display: grid; line-height: 1.25; }
+.who b { font-weight: 700; font-size: 15px; }
+.who small { color: var(--muted); font-size: 13px; }
+.like {
+  margin-left: auto; flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0;
+  background: var(--chip); color: var(--muted); display: grid; place-items: center; cursor: pointer;
+}
+.like svg { width: 22px; height: 22px; }
+.like path { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linejoin: round; }
+.like[aria-pressed="true"] { color: var(--bad); }
+.like[aria-pressed="true"] path { fill: currentColor; }
+.like.pop svg { animation: pop .32s ease-out; }
+
+.q { margin: 0; font-size: clamp(19px, 5.3vw, 23px); line-height: 1.32; font-weight: 600; text-wrap: balance; }
+.q.note { font-size: 15px; font-weight: 600; color: var(--muted); }
+
+.code { background: var(--code-bg); border: 1px solid var(--code-line); border-radius: 16px; overflow: hidden; min-width: 0; }
+.code-head {
+  display: flex; justify-content: space-between; gap: 8px; padding: 8px 14px;
+  font: 500 11.5px/1.2 var(--font-mono); color: var(--code-dim); border-bottom: 1px solid var(--code-line);
+}
+.code pre {
+  margin: 0; padding: 12px 14px 14px; overflow-x: auto; color: var(--code-fg);
+  font-family: var(--font-mono); font-size: var(--code-fs, 14px); line-height: 1.55; tab-size: var(--tab, 4);
+}
+.k { color: var(--syn-kw); }
+.s { color: var(--syn-str); }
+.n { color: var(--syn-num); }
+.f { color: var(--syn-fn); }
+.y { color: var(--syn-type); }
+.c { color: var(--code-dim); font-style: italic; }
+
+.opts { display: grid; gap: 10px; }
+.opt {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 12px 14px;
+  text-align: left; border-radius: 14px; border: 1.5px solid var(--btn-line); background: var(--btn);
+  font: 500 16px/1.35 var(--font-body); cursor: pointer;
+  transition: background .15s, border-color .15s, opacity .2s, transform .1s;
+}
+.opt.mono { font-family: var(--font-mono); font-size: 14.5px; }
+.opt .txt { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.opt .num {
+  flex: none; width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center;
+  font: 600 12px/1 var(--font-mono); color: var(--muted); border: 1px solid var(--line);
+}
+@media (hover: hover) { .opt:hover { background: var(--btn-hover); } }
+@media (hover: none) { .opt .num { display: none; } }
+.opt:active { transform: scale(.985); }
+.done .opt { cursor: default; transform: none; }
+.done .opts .opt:not(.right):not(.wrong), .done .tf .opt:not(.right):not(.wrong),
+.done .grades .opt:not(.picked) { opacity: .42; }
+.opt.right { border-color: var(--ok); background: var(--ok-soft); }
+.opt.wrong { border-color: var(--bad); background: var(--bad-soft); animation: shake .34s; }
+.tf { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tf .opt { justify-content: center; min-height: 64px; font-size: 18px; font-weight: 700; }
+.grades { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.grades .opt { justify-content: center; gap: 8px; padding-inline: 6px; font-size: 15px; font-weight: 600; white-space: nowrap; }
+@media (max-width: 419px) { .grades .num { display: none; } }
+.grades .opt.picked.ok { border-color: var(--ok); background: var(--ok-soft); }
+.grades .opt.picked.half { border-color: var(--half); }
+.grades .opt.picked.bad { border-color: var(--bad); background: var(--bad-soft); }
+.reveal {
+  min-height: 56px; border-radius: 14px; border: 1.5px dashed var(--btn-line); background: var(--btn);
+  font-weight: 700; font-size: 16px; cursor: pointer;
+}
+.answer { margin: 0; padding: 14px 16px; border-radius: 14px; background: var(--chip); font-size: 16px; line-height: 1.58; animation: rise .22s ease-out; }
+
+.result { display: grid; gap: 12px; animation: rise .24s ease-out; }
+.verdict { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font: 700 22px/1.2 var(--font-display); }
+.verdict.ok { color: var(--ok); }
+.verdict.bad { color: var(--bad); }
+.verdict.half { color: var(--half); }
+.verdict small { font: 600 14px/1.3 var(--font-body); color: var(--muted); }
+.term {
+  margin: 0; padding: 12px 14px; border-radius: 14px; background: var(--code-bg); color: var(--code-fg);
+  border: 1px solid var(--code-line); font: 13px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.term .p { color: var(--syn-fn); }
+.term .e { color: var(--term-err); }
+.term .d { color: var(--code-dim); }
+.why { margin: 0; font-size: 16px; line-height: 1.58; }
+code.i { font-family: var(--font-mono); font-size: .88em; background: var(--chip); padding: .08em .35em; border-radius: 6px; overflow-wrap: anywhere; }
+.next {
+  display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; width: 100%;
+  border: 0; border-radius: 14px; background: var(--acc); color: var(--on-acc); font-weight: 700; font-size: 16px; cursor: pointer;
+}
+.next svg { width: 18px; height: 18px; }
+.ghost {
+  min-height: 52px; width: 100%; border-radius: 14px; border: 1.5px solid var(--btn-line); background: var(--btn);
+  font-weight: 600; font-size: 16px; cursor: pointer;
+}
+
+.special .body { gap: 16px; }
+.kicker { margin: 0; font: 600 12px/1 var(--font-body); letter-spacing: .12em; text-transform: uppercase; color: var(--acc); }
+.big { margin: 0; font: 700 clamp(30px, 9vw, 42px)/1.06 var(--font-display); text-wrap: balance; }
+.line { margin: 0; font-size: 17px; line-height: 1.5; }
+.line.dim { color: var(--muted); font-size: 15px; }
+.actions { display: grid; gap: 10px; margin-top: 6px; }
+.swipe { margin: 4px 0 0; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-size: 14px; }
+.swipe svg { width: 18px; height: 18px; animation: nudge 1.6s ease-in-out infinite; }
+
+#bar {
+  position: absolute; z-index: 6; top: 0; left: 50%; transform: translateX(-50%);
+  width: min(100%, var(--col)); height: calc(var(--bar-h) + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: max(10px, env(safe-area-inset-left, 0px)); padding-right: max(10px, env(safe-area-inset-right, 0px));
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center;
+  background: var(--glass); -webkit-backdrop-filter: saturate(1.5) blur(18px); backdrop-filter: saturate(1.5) blur(18px);
+  border-bottom: 1px solid var(--line);
+}
+#tabs { display: flex; justify-content: center; gap: 16px; min-width: 0; }
+.tab {
+  position: relative; border: 0; background: none; color: var(--muted); padding: 12px 1px;
+  font-weight: 600; font-size: 15px; line-height: 1; white-space: nowrap; cursor: pointer;
+}
+.tab[aria-selected="true"] { color: var(--text); }
+.tab[aria-selected="true"]::after {
+  content: ""; position: absolute; left: 22%; right: 22%; bottom: 3px; height: 2.5px; border-radius: 2px; background: currentColor;
+}
+.badge {
+  display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 5px;
+  border-radius: 9px; background: var(--bad); color: var(--on-bad); font: 700 11px/1 var(--font-mono); vertical-align: 1px;
+}
+.icon-btn {
+  position: relative; width: 44px; height: 44px; border-radius: 50%; border: 0; background: transparent;
+  display: grid; place-items: center; cursor: pointer;
+}
+.icon-btn > svg { width: 24px; height: 24px; }
+.icon-btn .stroke { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
+#btn-topics.on::after {
+  content: ""; position: absolute; top: 9px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--half);
+}
+.ring { width: 34px; height: 34px; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 3; }
+.ring .track { stroke: var(--line); }
+.ring .prog { stroke: var(--ok); stroke-linecap: round; stroke-dasharray: 94.25; stroke-dashoffset: 94.25; transition: stroke-dashoffset .4s; }
+#ring-n { position: absolute; font: 700 11px/1 var(--font-mono); font-variant-numeric: tabular-nums; }
+
+#desk-nav { position: absolute; z-index: 4; top: 50%; right: calc(50% - var(--col) / 2 - 76px); transform: translateY(-50%); display: grid; gap: 12px; }
+.nav-btn {
+  width: 50px; height: 50px; border-radius: 50%; border: 1px solid var(--line); background: var(--btn);
+  display: grid; place-items: center; cursor: pointer;
+}
+.nav-btn svg { width: 22px; height: 22px; }
+@media (hover: hover) { .nav-btn:hover { background: var(--btn-hover); } }
+#brand, #keys { position: absolute; z-index: 4; left: max(32px, calc(50% - var(--col) / 2 - 300px)); width: 230px; }
+#brand { top: 30px; margin: 0; font: 700 26px/1.1 var(--font-display); }
+#brand small { display: block; margin-top: 8px; font: 500 14px/1.4 var(--font-body); color: var(--muted); }
+#keys { bottom: 32px; margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; color: var(--muted); font-size: 14px; }
+#keys kbd {
+  display: inline-block; min-width: 24px; padding: 2px 6px; margin-right: 6px; border-radius: 6px; border: 1px solid var(--line);
+  font: 600 12px/1.4 var(--font-mono); color: var(--text); text-align: center;
+}
+@media (max-width: 719px) { #desk-nav { display: none; } }
+@media (max-width: 1099px) { #brand, #keys { display: none; } }
+@media (min-width: 720px) {
+  .panel { height: calc(100% - 28px); margin-block: 14px; border-radius: 26px; box-shadow: 0 24px 70px var(--shadow); }
+  #bar { top: 14px; border-radius: 26px 26px 0 0; }
+}
+@media (max-width: 379px) { #tabs { gap: 11px; } .tab { font-size: 14px; } }
+
+#scrim { position: fixed; inset: 0; z-index: 9; background: var(--scrim); animation: fade .2s; }
+.drawer {
+  position: fixed; z-index: 10; left: 50%; bottom: 0; transform: translateX(-50%);
+  width: min(100%, var(--col)); max-height: 88%; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--drawer); border-radius: 22px 22px 0 0; box-shadow: 0 -12px 50px var(--shadow);
+  padding-block: 10px calc(24px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(18px, env(safe-area-inset-left, 0px)); padding-right: max(18px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 18px; animation: up .24s ease-out;
+  --h: 189; --acc: oklch(var(--acc-l) var(--acc-c) var(--h));
+}
+.drawer:focus { outline: none; }
+.grip { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto; }
+.d-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.d-head h2 { margin: 0; font: 700 21px/1.2 var(--font-display); }
+.close {
+  width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--chip); display: grid; place-items: center; cursor: pointer;
+}
+.close svg { width: 18px; height: 18px; }
+.level { display: inline-flex; align-items: center; gap: 8px; margin: 0; color: var(--muted); font-size: 14px; }
+.level b { color: var(--text); }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tile { display: grid; gap: 2px; padding: 12px 14px; border-radius: 14px; background: var(--chip); }
+.tile b { font: 700 24px/1.15 var(--font-display); font-variant-numeric: tabular-nums; }
+.tile span { color: var(--muted); font-size: 13px; }
+.d-sec { display: grid; gap: 10px; }
+.d-sec h3 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.seg { display: flex; padding: 3px; border-radius: 12px; background: var(--chip); }
+.seg button {
+  flex: 1; border: 0; background: none; color: var(--muted); padding: 10px 6px; border-radius: 9px;
+  font-weight: 600; font-size: 14px; line-height: 1; cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.seg button[aria-pressed="true"] { background: var(--btn-hover); color: var(--text); box-shadow: 0 1px 4px var(--shadow); }
+.trows { display: grid; gap: 2px; }
+.trow {
+  --acc: oklch(var(--acc-l) var(--acc-c) var(--h));
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 4px 10px; align-items: center;
+  width: 100%; padding: 7px 6px; border: 0; border-radius: 10px; background: none; text-align: left; cursor: pointer;
+}
+@media (hover: hover) { .trow:hover { background: var(--chip); } }
+.trow .ava { width: 34px; height: 34px; font-size: 10.5px; grid-row: span 2; }
+.trow .tn { font-weight: 600; font-size: 15px; }
+.trow .tc { color: var(--muted); font: 500 13px/1 var(--font-mono); font-variant-numeric: tabular-nums; }
+.meter { grid-column: 2 / 4; display: flex; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--acc); }
+.meter i.p { opacity: .38; }
+.hard { display: grid; gap: 6px; }
+.hard button {
+  display: grid; gap: 2px; width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px;
+  background: none; text-align: left; cursor: pointer;
+}
+.hard small { color: var(--muted); font-size: 12.5px; }
+.hard span { font: 500 13.5px/1.35 var(--font-mono); overflow-wrap: anywhere; }
+.d-foot { display: grid; gap: 10px; color: var(--muted); font-size: 13.5px; }
+.d-foot p { margin: 0; }
+.danger { border-color: var(--bad); color: var(--bad); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  --acc: oklch(var(--acc-l) var(--acc-c) var(--h));
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px;
+  border: 1.5px solid var(--btn-line); background: var(--btn); font-weight: 600; font-size: 14px; cursor: pointer;
+}
+.chip .g {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  font: 600 10px/1 var(--font-mono); color: var(--acc); border: 1.5px solid var(--acc);
+}
+.chip small { color: var(--muted); font-weight: 500; }
+.chip[aria-pressed="false"] { opacity: .42; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+#toast {
+  position: fixed; z-index: 12; left: 50%; bottom: calc(26px + env(safe-area-inset-bottom, 0px));
+  transform: translate(-50%, 8px); padding: 10px 16px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--drawer); color: var(--text); font-weight: 600; font-size: 14px; white-space: nowrap;
+  box-shadow: 0 8px 30px var(--shadow); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+}
+#toast.on { opacity: 1; transform: translate(-50%, 0); }
+.ava, .code pre, .opt.mono, .term, code.i, .chip .g, #ring-n, #keys kbd, .hard span, .trow .tc {
+  font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0;
+}
+noscript { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; }
+
+@keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 50% { transform: translateX(5px); } 75% { transform: translateX(-3px); } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes up { from { transform: translate(-50%, 40px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+@keyframes nudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <main id="feed" role="feed" aria-label="Карточки"></main>
+  <header id="bar">
+    <button id="btn-topics" class="icon-btn" type="button" aria-label="Темы">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path class="stroke" d="M4 7h9M17 7h3M4 17h4M12 17h8"/><circle class="stroke" cx="15" cy="7" r="2"/><circle class="stroke" cx="10" cy="17" r="2"/></svg>
+    </button>
+    <nav id="tabs" role="tablist" aria-label="Лента">
+      <button class="tab" type="button" role="tab" data-tab="feed" aria-selected="true">Для тебя</button>
+      <button class="tab" type="button" role="tab" data-tab="miss" aria-selected="false">Ошибки<span id="miss-n" class="badge" hidden></span></button>
+      <button class="tab" type="button" role="tab" data-tab="saved" aria-selected="false">Избранное</button>
+    </nav>
+    <button id="btn-stats" class="icon-btn" type="button" aria-label="Прогресс">
+      <svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle class="track" cx="18" cy="18" r="15"/><circle class="prog" cx="18" cy="18" r="15"/></svg>
+      <span id="ring-n">0</span>
+    </button>
+  </header>
+  <div id="desk-nav">
+    <button class="nav-btn" id="nav-up" type="button" aria-label="Предыдущая карточка">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path class="stroke" d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="nav-btn" id="nav-down" type="button" aria-label="Следующая карточка">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+  <p id="brand">Go-лента<small>Вопросы по Go к собеседованию. Код запущен, вывод в терминале настоящий.</small></p>
+  <ul id="keys">
+    <li><kbd>↑</kbd><kbd>↓</kbd>листать</li>
+    <li><kbd>1</kbd>–<kbd>4</kbd>выбрать ответ</li>
+    <li><kbd>Enter</kbd>показать ответ, дальше</li>
+    <li><kbd>L</kbd>в избранное</li>
+  </ul>
+</div>
+<div id="scrim" hidden></div>
+<section id="d-topics" class="drawer" hidden aria-label="Темы" tabindex="-1"></section>
+<section id="d-stats" class="drawer" hidden aria-label="Прогресс" tabindex="-1"></section>
+<div id="toast" role="status" aria-live="polite"></div>
+<noscript>Для ленты нужен JavaScript.</noscript>
+<script>
+(() => {
+'use strict';
+
+const CARDS = [{"id":"sl-append-share","t":"slices","k":"out","code":"a := []int{1, 2, 3, 4}\nb := a[:2]\nb = append(b, 99)\nfmt.Println(a)","why":"`b` смотрит в тот же массив, что и `a`, и `cap(b)` = 4. Места хватает, поэтому `append` пишет прямо в `a[2]`.","o":["[1 2 3 4]","[1 2 99 4]","[1 2 99 3 4]","panic: index out of range"],"a":1,"term":"$ go run .\n[1 2 99 4]"},{"id":"sl-full-slice","t":"slices","k":"out","code":"a := []int{1, 2, 3, 4}\nb := a[:2:2]\nb = append(b, 99)\nfmt.Println(a, b)","why":"Третье число в `a[:2:2]` ограничивает `cap` двойкой. `append` не влезает и копирует в новый массив, а `a` остаётся целым. Так защищают исходный слайс от чужого `append`.","o":["[1 2 3 4] [1 2 99]","[1 2 99 4] [1 2 99]","[1 2 3 4] [1 2]","ошибка компиляции"],"a":0,"term":"$ go run .\n[1 2 3 4] [1 2 99]"},{"id":"sl-alias-two","t":"slices","k":"out","code":"a := make([]int, 0, 4)\nb := append(a, 1)\nc := append(a, 2)\nfmt.Println(b[0], c[0])","why":"У `a` есть место, поэтому оба `append` пишут в одну ячейку `a[0]`. Второй затёр первый, и `b` с `c` смотрят в один массив.","o":["1 2","2 2","1 1","panic: index out of range"],"a":1,"term":"$ go run .\n2 2"},{"id":"sl-func-cap","t":"slices","k":"out","code":"func add(s []int) {\n\ts = append(s, 4)\n\ts[0] = 100\n}\n\nfunc main() {\n\ts := make([]int, 3, 10)\n\tadd(s)\n\tfmt.Println(s)\n}","why":"В функцию копируется заголовок слайса, а массив общий. Места хватило, `append` никуда не переехал, поэтому `s[0] = 100` видно снаружи. Длина в `main` осталась 3, и четвёрку не видно.","o":["[0 0 0]","[100 0 0]","[100 0 0 4]","[0 0 0 4]"],"a":1,"term":"$ go run .\n[100 0 0]"},{"id":"sl-func-nocap","t":"slices","k":"out","code":"func add(s []int) {\n\ts = append(s, 4)\n\ts[0] = 100\n}\n\nfunc main() {\n\ts := []int{1, 2, 3}\n\tadd(s)\n\tfmt.Println(s)\n}","why":"`cap` = 3, места нет. `append` создал новый массив, и `s[0] = 100` поменял уже его. Хочешь менять слайс в функции — возвращай его: `s = add(s)`.","o":["[1 2 3]","[100 2 3]","[100 2 3 4]","[1 2 3 4]"],"a":0,"term":"$ go run .\n[1 2 3]"},{"id":"sl-nil-empty","t":"slices","k":"out","code":"var a []int\nb := []int{}\nfmt.Println(a == nil, b == nil)\nfmt.Println(len(a), len(b))","why":"nil-слайс и пустой ведут себя одинаково: `len`, `range` и `append` работают с обоими. Разница видна в `== nil` и в JSON: nil даёт `null`, пустой — `[]`.","o":["true false\n0 0","true true\n0 0","false false\n0 0","true false\n0 1"],"a":0,"term":"$ go run .\ntrue false\n0 0"},{"id":"sl-range-copy","t":"slices","k":"out","code":"s := []int{1, 2, 3}\nfor _, v := range s {\n\tv *= 10\n}\nfmt.Println(s)","why":"`v` — копия элемента. Поменять сам слайс можно только через индекс: `s[i] *= 10`.","o":["[1 2 3]","[10 20 30]","ошибка компиляции"],"a":0,"term":"$ go run .\n[1 2 3]"},{"id":"sl-range-len","t":"slices","k":"out","code":"s := []int{1, 2, 3}\nfor i := range s {\n\ts = append(s, i)\n}\nfmt.Println(len(s))","why":"`range` берёт слайс один раз, в начале цикла. Сколько бы элементов ни добавилось, итераций будет 3.","o":["бесконечный цикл","6","3","4"],"a":1,"term":"$ go run .\n6"},{"id":"sl-make-len","t":"slices","k":"out","code":"s := make([]int, 0, 5)\ns[0] = 1\nfmt.Println(s)","why":"`cap` = 5, но `len` = 0. По индексу можно обращаться только в пределах `len`. Добавлять элементы — через `append`.","o":["[1]","[1 0 0 0 0]","panic: index out of range [0] with length 0","ошибка компиляции"],"a":2,"term":"$ go run .\npanic: runtime error: index out of range [0] with length 0\n\ngoroutine 1 [running]:\n…\nexit status 2"},{"id":"sl-cap-growth","t":"slices","k":"out","code":"s := make([]int, 0, 1)\nfor i := 0; i < 5; i++ {\n\ts = append(s, i)\n\tfmt.Print(cap(s), \" \")\n}","why":"Когда место кончается, `cap` удваивается: 1, 2, 4, 8. На четвёртом элементе место ещё было. С 256 элементов рост замедляется примерно до ×1,25, и ёмкость округляется под размер блока памяти.","o":["1 2 3 4 5","1 2 4 4 8","2 4 8 16 32","1 2 4 8 16"],"a":1,"term":"$ go run .\n1 2 4 4 8"},{"id":"sl-copy","t":"slices","k":"out","code":"a := []int{1, 2, 3}\nb := make([]int, 2)\nn := copy(b, a)\nfmt.Println(n, b)","why":"`copy` копирует столько, сколько влезает: меньшую из двух длин. И возвращает это число.","o":["2 [1 2]","3 [1 2 3]","0 []","panic: длины не совпадают"],"a":0,"term":"$ go run .\n2 [1 2]"},{"id":"sl-array-value","t":"slices","k":"out","code":"a := [3]int{1, 2, 3}\nb := a\nb[0] = 100\nfmt.Println(a[0], b[0])","why":"Массив — это значение, при присваивании он копируется целиком. У слайса копируется только заголовок, а массив под ним общий.","o":["1 100","100 100","1 1"],"a":0,"term":"$ go run .\n1 100"},{"id":"sl-header","t":"slices","k":"qa","q":"Из чего состоит слайс и что копируется, когда его передают в функцию?","ans":"Слайс — это заголовок из трёх полей: указатель на массив, `len` и `cap`. На 64-битной системе это 24 байта. В функцию копируется заголовок, а массив остаётся общим. Поэтому `s[i] = x` в функции видно снаружи, а `append` — нет, пока не вернёшь новый слайс."},{"id":"mp-nil","t":"maps","k":"out","code":"var m map[string]int\nfmt.Println(m[\"a\"])\nm[\"a\"] = 1","why":"Читать из nil-мапы можно: вернётся нулевое значение. Запись паникует. Создавай мапу через `make` или литерал `map[string]int{}`.","o":["0","0\npanic: assignment to entry in nil map","panic на чтении","ошибка компиляции"],"a":1,"term":"$ go run .\n0\npanic: assignment to entry in nil map\n\ngoroutine 1 [running]:\n…\nexit status 2"},{"id":"mp-order","t":"maps","k":"tf","q":"Порядок обхода мапы через `range` одинаковый при каждом запуске.","why":"Порядок не гарантирован, рантайм специально его перемешивает. Нужен порядок — отсортируй ключи: `slices.Sorted(maps.Keys(m))`.","a":false},{"id":"mp-struct-field","t":"maps","k":"out","code":"type User struct{ Age int }\n\nfunc main() {\n\tm := map[string]User{\"a\": {Age: 1}}\n\tm[\"a\"].Age = 2\n\tfmt.Println(m)\n}","why":"Элемент мапы нельзя менять по месту: при росте мапа переносит элементы, и адрес у них не постоянный. Достань значение, поменяй и положи обратно. Или храни указатели: `map[string]*User`.","o":["map[a:{2}]","map[a:{1}]","ошибка компиляции","panic"],"a":2,"term":"$ go run .\n# x\n./prog.go:5:2: cannot assign to struct field m[\"a\"].Age in map\n"},{"id":"mp-comma-ok","t":"maps","k":"out","code":"m := map[string]int{\"a\": 0}\nv1, ok1 := m[\"a\"]\nv2, ok2 := m[\"b\"]\nfmt.Println(v1, ok1, v2, ok2)","why":"По одному значению не отличить «ключ есть, значение 0» и «ключа нет». Это отличает второе значение, `ok`.","o":["0 true 0 false","0 true 0 true","0 false 0 false","panic: ключа b нет"],"a":0,"term":"$ go run .\n0 true 0 false"},{"id":"mp-concurrent","t":"maps","k":"pick","q":"Две горутины без мьютекса пишут в одну мапу. Что будет?","why":"Рантайм замечает одновременную запись и роняет процесс. Это `fatal error`, а не `panic`, поэтому `recover` не спасёт. Защищай мапу `sync.Mutex` или бери `sync.Map`.","o":["Ничего: мапа потокобезопасна","Программа может упасть с `fatal error: concurrent map writes`, и `recover` не поможет","Паника, которую поймает `recover`","Ошибка компиляции"],"a":1},{"id":"mp-delete-range","t":"maps","k":"tf","q":"Удалять ключи из мапы прямо внутри `range` по ней — безопасно.","why":"Так можно по спецификации. Удалённый ключ, до которого обход ещё не дошёл, просто не встретится. А ключ, добавленный во время обхода, может встретиться, а может и нет.","a":true},{"id":"mp-ref","t":"maps","k":"out","code":"func set(m map[string]int) {\n\tm[\"x\"] = 1\n}\n\nfunc main() {\n\tm := map[string]int{}\n\tset(m)\n\tfmt.Println(len(m))\n}","why":"Переменная мапы — это указатель на внутреннюю структуру. Копия в функции указывает туда же, поэтому запись видна снаружи.","o":["0","1","ошибка компиляции"],"a":1,"term":"$ go run .\n1"},{"id":"mp-key-slice","t":"maps","k":"out","code":"m := map[[]int]string{}\nfmt.Println(len(m))","why":"Ключ должен сравниваться через `==`. Слайс, мапа и функция не сравниваются. Массив `[2]int` и структура из сравнимых полей — можно.","o":["0","ошибка компиляции","panic"],"a":1,"term":"$ go run .\n# x\n./prog.go:1:10: invalid map key type []int\n"},{"id":"mp-make-hint","t":"maps","k":"tf","q":"`make(map[string]int, 100)` создаёт мапу со 100 элементами.","why":"Второй аргумент — подсказка ёмкости, а `len(m)` будет 0. Подсказка экономит перестройки при росте. У слайса наоборот: `make([]int, 100)` даёт 100 нулей.","a":false},{"id":"mp-inside","t":"maps","k":"qa","q":"Как мапа устроена внутри?","ans":"Это хеш-таблица. До Go 1.24 — бакеты по 8 пар, при переполнении цепочка, при росте элементы переносятся понемногу. С Go 1.24 — Swiss Table: слоты собраны в группы по 8, у каждой группы байты-метки с кусочком хеша, и поиск сравнивает 8 меток разом. Порядок обхода случайный, адрес элемента взять нельзя."},{"id":"mp-syncmap","t":"maps","k":"pick","q":"Когда `sync.Map` лучше обычной мапы с `sync.Mutex`?","why":"Это два случая из документации `sync.Map`. В остальных мапа с мьютексом проще и часто быстрее.","o":["Всегда: она быстрее","Ключ пишется один раз и потом много читается, или горутины работают с разными ключами","Когда нужен порядок ключей","Когда ключи — слайсы"],"a":1},{"id":"st-len","t":"strings","k":"out","code":"s := \"привет\"\nfmt.Println(len(s), utf8.RuneCountInString(s))","why":"`len` считает байты. Буква кириллицы в UTF-8 занимает 2 байта, поэтому 12. Символы считает `utf8.RuneCountInString`.","o":["6 6","12 6","12 12","6 12"],"a":1,"term":"$ go run .\n12 6"},{"id":"st-index","t":"strings","k":"out","code":"s := \"hello\"\nfmt.Println(s[0], string(s[0]))","why":"`s[i]` — это байт (`uint8`), и `Println` печатает его числом. `string(s[0])` превращает код в символ.","o":["h h","104 h","104 104","ошибка компиляции"],"a":1,"term":"$ go run .\n104 h"},{"id":"st-range","t":"strings","k":"out","code":"for i, r := range \"мир\" {\n\tfmt.Print(i, \":\", string(r), \" \")\n}","why":"`range` по строке идёт по символам (рунам), а `i` — номер байта, с которого символ начинается. Буква кириллицы занимает 2 байта.","o":["0:м 1:и 2:р","0:м 2:и 4:р","0:� 1:� 2:� 3:� 4:� 5:�"],"a":1,"term":"$ go run .\n0:м 2:и 4:р"},{"id":"st-immutable","t":"strings","k":"out","code":"s := \"hello\"\ns[0] = 'H'\nfmt.Println(s)","why":"Строки неизменяемые. Поменять можно через копию: `b := []byte(s)`, потом `b[0] = 'H'` и `s = string(b)`.","o":["Hello","ошибка компиляции","panic"],"a":1,"term":"$ go run .\n# x\n./prog.go:2:1: cannot assign to s[0] (neither addressable nor a map index expression)\n"},{"id":"st-builder","t":"strings","k":"pick","q":"Как быстрее всего склеить 10 000 строк в цикле?","why":"`s += x` каждый раз копирует всю строку, это O(n²). `strings.Builder` растит буфер как слайс. Если итоговый размер известен, сначала вызови `Grow`.","o":["`s += x`","`strings.Builder`","`fmt.Sprintf` на каждой итерации"],"a":1},{"id":"st-runes","t":"strings","k":"out","code":"s := \"привет\"\nr := []rune(s)\nr[0] = 'П'\nfmt.Println(string(r), s)","why":"`[]rune(s)` копирует строку в новый слайс. Исходная строка не меняется.","o":["Привет привет","Привет Привет","ошибка компиляции"],"a":0,"term":"$ go run .\nПривет привет"},{"id":"st-itoa","t":"strings","k":"out","code":"n := 65\nfmt.Println(string(rune(n)), strconv.Itoa(n))","why":"`string(rune(n))` даёт символ с кодом n. Число в текст переводят через `strconv.Itoa` или `fmt.Sprint`. На голое `string(n)` для `int` ругается `go vet`.","o":["65 65","A 65","A A"],"a":1,"term":"$ go run .\nA 65"},{"id":"st-substr-mem","t":"strings","k":"tf","q":"Короткая подстрока `s[:10]` от огромной строки держит в памяти всю исходную строку.","why":"Подстрока смотрит в те же байты, копии нет. Чтобы отпустить большую строку, скопируй кусок: `strings.Clone(s[:10])`.","a":true},{"id":"if-typed-nil","t":"ifaces","k":"out","code":"type MyErr struct{}\n\nfunc (*MyErr) Error() string { return \"boom\" }\n\nfunc find() error {\n\tvar e *MyErr = nil\n\treturn e\n}\n\nfunc main() {\n\terr := find()\n\tfmt.Println(err == nil)\n}","why":"Интерфейс хранит пару: тип и значение. Здесь тип `*MyErr` есть, значение nil, и интерфейс уже не nil. Если ошибки нет, возвращай просто `nil`.","o":["true","false","panic: nil pointer dereference"],"a":1,"term":"$ go run .\nfalse"},{"id":"if-nil-pair","t":"ifaces","k":"out","code":"var p *int\nvar i any = p\nfmt.Println(p == nil, i == nil)","why":"В `i` лежит тип `*int` с пустым значением. Интерфейс равен nil, только когда пустые и тип, и значение.","o":["true true","true false","false false"],"a":1,"term":"$ go run .\ntrue false"},{"id":"if-assert-panic","t":"ifaces","k":"out","code":"var i any = \"go\"\nn := i.(int)\nfmt.Println(n)","why":"Утверждение типа без `ok` паникует, если тип не тот. Безопасная форма: `n, ok := i.(int)`.","o":["0","panic: interface conversion","ошибка компиляции"],"a":1,"term":"$ go run .\npanic: interface conversion: interface {} is string, not int\n\ngoroutine 1 [running]:\n…\nexit status 2"},{"id":"if-comma-ok","t":"ifaces","k":"out","code":"var i any = \"go\"\nn, ok := i.(int)\nfmt.Println(n, ok)","why":"С `ok` паники нет: при неудаче получаешь нулевое значение и `false`.","o":["0 false","go false","panic: interface conversion"],"a":0,"term":"$ go run .\n0 false"},{"id":"if-ptr-receiver","t":"ifaces","k":"out","code":"type Speaker interface{ Speak() string }\n\ntype Dog struct{}\n\nfunc (d *Dog) Speak() string { return \"гав\" }\n\nfunc main() {\n\tvar s Speaker = Dog{}\n\tfmt.Println(s.Speak())\n}","why":"Метод с получателем-указателем есть только у `*Dog`, а у `Dog` его нет. Положи в интерфейс указатель: `var s Speaker = &Dog{}`.","o":["гав","ошибка компиляции","panic"],"a":1,"term":"$ go run .\n# x\n./prog.go:8:18: cannot use Dog{} (value of struct type Dog) as Speaker value in variable declaration: Dog does not implement Speaker (method Speak has pointer receiver)\n"},{"id":"if-switch","t":"ifaces","k":"out","code":"func kind(v any) string {\n\tswitch v.(type) {\n\tcase int, int64:\n\t\treturn \"целое\"\n\tcase string:\n\t\treturn \"строка\"\n\tcase nil:\n\t\treturn \"nil\"\n\t}\n\treturn \"другое\"\n}\n\nfunc main() {\n\tfmt.Println(kind(1), kind(nil), kind(1.5))\n}","why":"`case nil` ловит пустой интерфейс. `1.5` — это `float64`, его нет в списке, поэтому «другое».","o":["целое nil другое","целое другое другое","ошибка компиляции"],"a":0,"term":"$ go run .\nцелое nil другое"},{"id":"if-compare-panic","t":"ifaces","k":"out","code":"var a any = []int{1}\nvar b any = []int{1}\nfmt.Println(a == b)","why":"Интерфейсы сравнивать можно, и компилятор это пропустит. Но если внутри лежит несравнимый тип, например слайс, будет паника во время работы.","o":["true","false","panic: comparing uncomparable type []int","ошибка компиляции"],"a":2,"term":"$ go run .\npanic: runtime error: comparing uncomparable type []int\n\ngoroutine 1 [running]:\n…\nexit status 2"},{"id":"if-implicit","t":"ifaces","k":"tf","q":"Чтобы тип реализовал интерфейс, это надо явно написать в объявлении типа.","why":"Реализация неявная: есть все методы — значит, реализует. Проверить на этапе компиляции можно строкой `var _ Speaker = (*Dog)(nil)`.","a":false},{"id":"if-inside","t":"ifaces","k":"qa","q":"Как интерфейс устроен внутри?","ans":"Это два машинных слова. Пустой `any` (eface): указатель на тип и указатель на данные. Интерфейс с методами (iface): указатель на itab и указатель на данные. В itab лежат тип и таблица методов, вызов метода идёт через неё. Отсюда и typed nil: тип есть, а данные nil."},{"id":"if-where","t":"ifaces","k":"qa","q":"Где объявлять интерфейс: рядом с реализацией или там, где им пользуются?","ans":"Там, где пользуются. Правило: принимай интерфейсы, возвращай структуры. Интерфейс маленький, 1–3 метода — ровно то, что нужно потребителю. Тогда в тесте зависимость легко подменить фейком."},{"id":"sm-value-recv","t":"structs","k":"out","code":"type Counter struct{ n int }\n\nfunc (c Counter) Inc() { c.n++ }\n\nfunc main() {\n\tc := Counter{}\n\tc.Inc()\n\tc.Inc()\n\tfmt.Println(c.n)\n}","why":"Получатель по значению: метод работает с копией. Чтобы менять поле, нужен указатель: `func (c *Counter) Inc()`.","o":["0","2","1","ошибка компиляции"],"a":0,"term":"$ go run .\n0"},{"id":"sm-ptr-auto","t":"structs","k":"out","code":"type Counter struct{ n int }\n\nfunc (c *Counter) Inc() { c.n++ }\n\nfunc main() {\n\tc := Counter{}\n\tc.Inc()\n\tfmt.Println(c.n)\n}","why":"У переменной `c` есть адрес, и Go сам подставит `(&c).Inc()`. С элементом мапы так не выйдет: адреса у него нет.","o":["0","1","ошибка компиляции"],"a":1,"term":"$ go run .\n1"},{"id":"sm-embed","t":"structs","k":"out","code":"type Animal struct{}\n\nfunc (Animal) Name() string { return \"зверь\" }\n\nfunc (a Animal) Hello() string {\n\treturn \"я \" + a.Name()\n}\n\ntype Cat struct{ Animal }\n\nfunc (Cat) Name() string { return \"кот\" }\n\nfunc main() {\n\tfmt.Println(Cat{}.Hello())\n}","why":"Встраивание — это не наследование. `Hello` — метод `Animal`, и внутри он вызывает `Name` у `Animal`. Виртуальных методов в Go нет. Нужна подмена поведения — передавай интерфейс.","o":["я кот","я зверь","ошибка компиляции"],"a":1,"term":"$ go run .\nя зверь"},{"id":"sm-sizeof","t":"structs","k":"out","code":"type A struct {\n\ta bool\n\tb int64\n\tc bool\n}\n\ntype B struct {\n\tb int64\n\ta bool\n\tc bool\n}\n\nfunc main() {\n\tfmt.Println(unsafe.Sizeof(A{}))\n\tfmt.Println(unsafe.Sizeof(B{}))\n}","why":"`int64` выравнивается по 8 байт, поэтому после `bool` компилятор вставляет 7 пустых байт. Если ставить поля от больших к маленьким, структура меньше. Ответ — для 64-битной системы.","o":["10\n10","24\n16","16\n16","24\n24"],"a":1,"term":"$ go run .\n24\n16"},{"id":"sm-empty","t":"structs","k":"out","code":"fmt.Println(unsafe.Sizeof(struct{}{}))","why":"Пустая структура весит 0 байт. Поэтому множество делают как `map[string]struct{}`, а сигнал — как `chan struct{}`.","o":["0","1","8"],"a":0,"term":"$ go run .\n0"},{"id":"sm-compare","t":"structs","k":"out","code":"type P struct{ Tags []string }\n\nfunc main() {\n\tfmt.Println(P{} == P{})\n}","why":"Структуры сравниваются через `==`, только если сравнимы все поля, а слайс — нет. Сравнивай своей функцией, например через `slices.Equal`.","o":["true","false","ошибка компиляции","panic"],"a":2,"term":"$ go run .\n# x\n./prog.go:4:14: invalid operation: P{} == P{} (struct containing []string cannot be compared)\n"},{"id":"sm-method-value","t":"structs","k":"out","code":"type T struct{ n int }\n\nfunc (t T) Show() { fmt.Println(t.n) }\n\nfunc main() {\n\tt := T{1}\n\tf := t.Show\n\tt.n = 2\n\tf()\n}","why":"`t.Show` запоминает получателя в момент, когда метод взяли. Получатель по значению, значит, запомнилась копия с `n = 1`. С `func (t *T)` вывелось бы 2.","o":["1","2","ошибка компиляции"],"a":0,"term":"$ go run .\n1"},{"id":"fn-defer-order","t":"funcs","k":"out","code":"for i := 0; i < 3; i++ {\n\tdefer fmt.Print(i, \" \")\n}\nfmt.Print(\"старт \")","why":"`defer` выполняется при выходе из функции в обратном порядке: последний отложенный — первым. Каждый `defer` запомнил свою `i`.","o":["0 1 2 старт","старт 2 1 0","старт 0 1 2","старт 3 3 3"],"a":1,"term":"$ go run .\nстарт 2 1 0"},{"id":"fn-defer-args","t":"funcs","k":"out","code":"x := 1\ndefer fmt.Println(\"defer:\", x)\nx = 2\nfmt.Println(\"main:\", x)","why":"Аргументы `defer` вычисляются сразу, в строке с `defer`. Нужно значение на момент выхода — оберни в замыкание: `defer func() { fmt.Println(x) }()`.","o":["main: 2\ndefer: 2","main: 2\ndefer: 1","defer: 1\nmain: 2"],"a":1,"term":"$ go run .\nmain: 2\ndefer: 1"},{"id":"fn-defer-named","t":"funcs","k":"out","code":"func f() (n int) {\n\tdefer func() { n *= 2 }()\n\treturn 3\n}\n\nfunc main() {\n\tfmt.Println(f())\n}","why":"`return 3` сначала записывает 3 в именованный результат `n`, потом выполняется `defer` и удваивает его. Так `defer` может поменять результат, например обернуть ошибку.","o":["3","6","0"],"a":1,"term":"$ go run .\n6"},{"id":"fn-defer-unnamed","t":"funcs","k":"out","code":"func f() int {\n\tn := 3\n\tdefer func() { n *= 2 }()\n\treturn n\n}\n\nfunc main() {\n\tfmt.Println(f())\n}","why":"У результата нет имени. `return n` уже скопировал 3 в результат, и `defer` меняет только локальную `n`.","o":["3","6","0"],"a":0,"term":"$ go run .\n3"},{"id":"fn-recover-goroutine","t":"funcs","k":"out","code":"func main() {\n\tdefer func() {\n\t\tfmt.Println(\"поймал:\", recover())\n\t}()\n\tdone := make(chan struct{})\n\tgo func() {\n\t\tpanic(\"бум\")\n\t}()\n\t<-done\n}","why":"`recover` ловит панику только в своей горутине. Паника в другой горутине роняет всю программу. Поэтому каждая горутина ставит свой `defer` с `recover`.","o":["поймал: бум","panic: бум, программа падает","fatal error: deadlock","ничего не выведет"],"a":1,"term":"$ go run .\npanic: бум\n\ngoroutine 19 [running]:\n…\nexit status 2"},{"id":"fn-recover-direct","t":"funcs","k":"out","code":"func handle() {\n\tif r := recover(); r != nil {\n\t\tfmt.Println(\"поймал\", r)\n\t}\n}\n\nfunc main() {\n\tdefer func() {\n\t\thandle()\n\t}()\n\tpanic(\"бум\")\n}","why":"`recover` работает, только если его вызвала сама отложенная функция. Здесь его вызвала `handle` изнутри замыкания, и `recover` вернул nil. Работает так: `defer handle()`.","o":["поймал бум","panic: бум","ошибка компиляции"],"a":1,"term":"$ go run .\npanic: бум\n\ngoroutine 1 [running]:\n…\nexit status 2"},{"id":"fn-loopvar","t":"funcs","k":"out","q":"Что выведет? Go 1.22+","code":"var fs []func()\nfor i := 0; i < 3; i++ {\n\tfs = append(fs, func() {\n\t\tfmt.Print(i, \" \")\n\t})\n}\nfor _, f := range fs {\n\tf()\n}","why":"С Go 1.22 у каждой итерации своя переменная `i`, и каждое замыкание видит своё значение. До 1.22 переменная была одна на весь цикл, и вышло бы 3 3 3. Старое поведение остаётся в модулях, где в `go.mod` стоит `go 1.21` и ниже.","o":["3 3 3","0 1 2","2 2 2"],"a":1,"term":"$ go run .\n0 1 2"},{"id":"fn-counter","t":"funcs","k":"out","code":"func counter() func() int {\n\tn := 0\n\treturn func() int {\n\t\tn++\n\t\treturn n\n\t}\n}\n\nfunc main() {\n\ta, b := counter(), counter()\n\tfmt.Println(a(), a(), b())\n}","why":"Каждый вызов `counter` создаёт свою `n`, и замыкание держит её. У `a` и `b` разные счётчики.","o":["1 1 1","1 2 1","1 2 3"],"a":1,"term":"$ go run .\n1 2 1"},{"id":"fn-exit","t":"funcs","k":"out","code":"defer fmt.Println(\"defer\")\nfmt.Println(\"main\")\nos.Exit(0)","why":"`os.Exit` завершает процесс сразу, и отложенные функции не выполняются. `log.Fatal` вызывает `os.Exit` — с ним то же самое.","o":["main","main\ndefer","defer\nmain"],"a":0,"term":"$ go run .\nmain"},{"id":"fn-panic-defer","t":"funcs","k":"out","code":"defer fmt.Println(\"defer 1\")\ndefer fmt.Println(\"defer 2\")\npanic(\"бум\")","why":"При панике отложенные функции всё равно выполняются, в обратном порядке. Только потом программа печатает панику и падает. Поэтому `defer mu.Unlock()` отпустит мьютекс и при панике.","o":["panic: бум","defer 2\ndefer 1\npanic: бум","defer 1\ndefer 2\npanic: бум"],"a":1,"term":"$ go run .\ndefer 2\ndefer 1\npanic: бум\n\ngoroutine 1 [running]:\n…\nexit status 2"},{"id":"er-wrap-is","t":"errors","k":"out","code":"var ErrNotFound = errors.New(\"not found\")\n\nfunc main() {\n\terr := fmt.Errorf(\"user: %w\", ErrNotFound)\n\tfmt.Println(err == ErrNotFound)\n\tfmt.Println(errors.Is(err, ErrNotFound))\n}","why":"После обёртки это новая ошибка, и `==` с исходной не совпадает. `errors.Is` разворачивает цепочку и находит `ErrNotFound` внутри.","o":["true\ntrue","false\ntrue","false\nfalse"],"a":1,"term":"$ go run .\nfalse\ntrue"},{"id":"er-v-vs-w","t":"errors","k":"out","code":"var ErrNotFound = errors.New(\"not found\")\n\nfunc main() {\n\terr := fmt.Errorf(\"user: %v\", ErrNotFound)\n\tfmt.Println(errors.Is(err, ErrNotFound))\n}","why":"`%v` превращает ошибку в текст, и цепочка рвётся. Чтобы обернуть, нужен `%w`.","o":["true","false"],"a":1,"term":"$ go run .\nfalse"},{"id":"er-as","t":"errors","k":"out","code":"type HTTPError struct{ Code int }\n\nfunc (e *HTTPError) Error() string {\n\treturn \"http\"\n}\n\nfunc main() {\n\te := &HTTPError{Code: 503}\n\terr := fmt.Errorf(\"call: %w\", e)\n\tvar he *HTTPError\n\tif errors.As(err, &he) {\n\t\tfmt.Println(he.Code)\n\t}\n}","why":"`errors.As` ищет в цепочке ошибку нужного типа и кладёт её в переменную. Передаётся указатель на переменную: `&he`.","o":["503","ничего не выведет","panic"],"a":0,"term":"$ go run .\n503"},{"id":"er-join","t":"errors","k":"out","code":"e1 := errors.New(\"a\")\ne2 := errors.New(\"b\")\nerr := errors.Join(e1, e2)\nfmt.Println(errors.Is(err, e2))\nfmt.Println(err)","why":"`errors.Join` (Go 1.20) собирает несколько ошибок в одну. `errors.Is` проверяет каждую, а текст — это их строки через перевод строки.","o":["false\na","true\na\nb","true\n[a b]"],"a":1,"term":"$ go run .\ntrue\na\nb"},{"id":"er-wrap-text","t":"errors","k":"pick","q":"Как лучше обернуть ошибку чтения конфига?","why":"Добавь, что делал и с чем. В логе получится понятная цепочка: `start: read config app.yaml: open app.yaml: no such file or directory`. А `%w` сохраняет исходную ошибку для `errors.Is`.","o":["`fmt.Errorf(\"ошибка: %w\", err)`","`fmt.Errorf(\"read config %s: %w\", path, err)`","`errors.New(err.Error())`","`fmt.Errorf(\"%v\", err)`"],"a":1},{"id":"er-sentinel","t":"errors","k":"qa","q":"Sentinel-ошибка или свой тип ошибки — когда что?","ans":"Sentinel — это `var ErrNotFound = errors.New(\"not found\")`. Её берут, когда вызывающему важен только сам факт ошибки, и проверяют через `errors.Is`. Свой тип берут, когда нужны данные: код ответа, поле, можно ли повторить. Его проверяют через `errors.As`. И то и другое — часть API пакета, менять потом больно."},{"id":"er-panic","t":"errors","k":"pick","q":"Когда в Go уместен `panic`?","why":"Ожидаемые ошибки — это значения `error`. `panic` — когда продолжать бессмысленно: ошибка программиста или не прочитался обязательный конфиг. Библиотека не выпускает панику наружу.","o":["На любую ошибку валидации","Сломан инвариант или не прошла инициализация при старте","Вместо `return err` — так короче","Когда недоступна сеть"],"a":1},{"id":"gr-main-exit","t":"goroutines","k":"out","code":"go fmt.Println(\"из горутины\")\nfmt.Println(\"main\")","why":"Программа заканчивается, когда возвращается `main`, и горутины никто не ждёт. Горутина может успеть напечатать, а может и нет — полагаться на это нельзя. Ждут через `sync.WaitGroup` или канал.","o":["из горутины\nmain","обычно только main","main\nиз горутины — всегда"],"a":1},{"id":"gr-gmp","t":"goroutines","k":"qa","q":"Что такое G, M и P в планировщике Go?","ans":"G — горутина: её стек и состояние. M — поток операционной системы. P — логический процессор: очередь готовых горутин и право выполнять Go-код, их `GOMAXPROCS` штук. Поток M берёт P и выполняет горутины из его очереди. Когда очередь пустеет, P крадёт половину чужой (work stealing)."},{"id":"gr-gomaxprocs","t":"goroutines","k":"pick","q":"Чему по умолчанию равен `GOMAXPROCS`?","why":"Это число P: сколько горутин выполняется одновременно. Раньше в Kubernetes его ставили руками или через `automaxprocs`. С Go 1.25 рантайм сам читает лимит CPU из cgroup.","o":["1","Числу ядер CPU, а с Go 1.25 в Linux он учитывает лимит CPU контейнера","Числу горутин","256"],"a":1},{"id":"gr-stack","t":"goroutines","k":"pick","q":"Сколько памяти занимает стек новой горутины?","why":"Стек начинается с нескольких килобайт (минимум 2 КБ). Когда места не хватает, рантайм копирует стек в кусок побольше. Поэтому горутин можно держать сотни тысяч, а потоков ОС — нет.","o":["1 МБ, как у потока","Несколько килобайт, и он растёт по мере надобности","64 КБ, фиксированно"],"a":1},{"id":"gr-preempt","t":"goroutines","k":"tf","q":"Горутина в бесконечном цикле без вызовов функций навсегда займёт поток, и планировщик её не снимет.","why":"С Go 1.14 есть асинхронное вытеснение. Если горутина работает дольше примерно 10 мс, рантайм посылает потоку сигнал и снимает её.","a":false},{"id":"gr-leak","t":"goroutines","k":"bug","q":"Что не так с этой функцией?","code":"func first(urls []string) string {\n\tch := make(chan string)\n\tfor _, u := range urls {\n\t\tgo func() { ch <- fetch(u) }()\n\t}\n\treturn <-ch\n}","why":"Читаем один ответ, а остальные горутины ждут читателя вечно. Лечится буфером `make(chan string, len(urls))` или отменой через `context`. Гонки на `u` с Go 1.22 нет.","o":["Утечка: остальные горутины навсегда зависнут на отправке","Гонка на переменной `u`","Deadlock в вызывающей функции","Всё правильно"],"a":0},{"id":"gr-syscall","t":"goroutines","k":"qa","q":"Что делает планировщик, когда горутина ушла в блокирующий системный вызов?","ans":"Поток M застревает в вызове вместе с горутиной. P отцепляется от него, переходит к другому потоку, свободному или новому, и выполняет остальные горутины. Сеть так не блокирует: она идёт через netpoller (epoll в Linux, kqueue в macOS), и горутина просто ждёт, пока сокет будет готов."},{"id":"gr-wait","t":"goroutines","k":"pick","q":"Как дождаться завершения 10 горутин?","why":"`Sleep` — гадание на времени. С Go 1.25 есть `wg.Go(func() {...})`: он сам делает `Add` и `Done`. Если нужна ещё и первая ошибка, бери `errgroup`.","o":["`time.Sleep(time.Second)`","`sync.WaitGroup`: `Add` до `go`, `Done` в горутине, `Wait` в конце","`runtime.Gosched()`","Цикл, пока `runtime.NumGoroutine() > 1`"],"a":1},{"id":"ch-deadlock","t":"channels","k":"out","code":"ch := make(chan int)\nch <- 1\nfmt.Println(<-ch)","why":"Небуферизованный канал ждёт читателя. Читать должна эта же горутина строкой ниже, но она застряла на отправке. Все горутины спят, и рантайм останавливает программу.","o":["1","fatal error: all goroutines are asleep - deadlock!","0","panic: send on channel"],"a":1,"term":"$ go run .\nfatal error: all goroutines are asleep - deadlock!\n\ngoroutine 1 [chan send]:\n…\nexit status 2"},{"id":"ch-buffered","t":"channels","k":"out","code":"ch := make(chan int, 1)\nch <- 1\nfmt.Println(<-ch)","why":"В буфере есть место на одно значение, и отправка не ждёт читателя. Вторая отправка без чтения уже заблокировала бы.","o":["1","fatal error: deadlock","0"],"a":0,"term":"$ go run .\n1"},{"id":"ch-closed-read","t":"channels","k":"out","code":"ch := make(chan int, 2)\nch <- 1\nclose(ch)\na, ok1 := <-ch\nb, ok2 := <-ch\nfmt.Println(a, ok1, b, ok2)","why":"После `close` значения из буфера ещё дочитываются. Потом чтение сразу возвращает нулевое значение и `ok = false`, без блокировки.","o":["1 true 1 true","1 true 0 false","panic: receive from closed channel","1 false 0 false"],"a":1,"term":"$ go run .\n1 true 0 false"},{"id":"ch-send-closed","t":"channels","k":"out","code":"ch := make(chan int, 1)\nclose(ch)\nch <- 1","why":"Отправка в закрытый канал — паника. Поэтому канал закрывает отправитель, и только когда больше ничего не пошлёт.","o":["ничего","panic: send on closed channel","fatal error: deadlock"],"a":1,"term":"$ go run .\npanic: send on closed channel\n\ngoroutine 1 [running]:\n…\nexit status 2"},{"id":"ch-close-twice","t":"channels","k":"out","code":"ch := make(chan int)\nclose(ch)\nclose(ch)","why":"Второй `close` паникует. Если закрыть канал могут из нескольких мест, оберни закрытие в `sync.Once`.","o":["ничего","panic: close of closed channel","ошибка компиляции"],"a":1,"term":"$ go run .\npanic: close of closed channel\n\ngoroutine 1 [running]:\n…\nexit status 2"},{"id":"ch-nil","t":"channels","k":"pick","q":"Что происходит с nil-каналом?","why":"Это полезно в `select`: присвой каналу nil, и его `case` больше не сработает. Так выключают источник, который уже закрылся.","o":["Чтение и запись блокируются навсегда, `close` паникует","Всё паникует","Чтение возвращает 0","Ошибка компиляции"],"a":0},{"id":"ch-range-noclose","t":"channels","k":"out","code":"ch := make(chan int)\ngo func() {\n\tfor i := 0; i < 3; i++ {\n\t\tch <- i\n\t}\n}()\nfor v := range ch {\n\tfmt.Print(v, \" \")\n}","why":"`range` по каналу ждёт `close`. Отправитель послал три числа, но не закрыл канал, и `main` ждёт вечно. Отправитель закрывает канал сам: `defer close(ch)`.","o":["0 1 2","0 1 2, потом fatal error: deadlock!","бесконечный цикл нулей","ничего"],"a":1,"term":"$ go run .\n0 1 2\nfatal error: all goroutines are asleep - deadlock!\n\ngoroutine 1 [chan receive]:\n…\nexit status 2"},{"id":"ch-select-default","t":"channels","k":"out","code":"ch := make(chan int)\nselect {\ncase v := <-ch:\n\tfmt.Println(v)\ndefault:\n\tfmt.Println(\"пусто\")\n}","why":"`default` срабатывает, когда ни один `case` не готов прямо сейчас. Так делают чтение без ожидания.","o":["0","пусто","fatal error: deadlock"],"a":1,"term":"$ go run .\nпусто"},{"id":"ch-select-random","t":"channels","k":"tf","q":"Если в `select` готовы сразу несколько `case`, выполнится верхний.","why":"Из готовых выбирается случайный, чтобы ни один канал не голодал. Нужен приоритет — сначала проверь важный канал отдельным `select` с `default`.","a":false},{"id":"ch-timeout","t":"channels","k":"pick","q":"Как ждать ответа из канала не дольше секунды?","why":"Второй `case` в `select` ждёт `time.After` или `ctx.Done()`. Контекст с таймаутом лучше: отмена дойдёт и до вложенных вызовов.","o":["`select` с `case <-time.After(time.Second)`","`time.Sleep(time.Second)` перед чтением","Проверять `len(ch) > 0`","`runtime.Gosched()`"],"a":0},{"id":"ch-len","t":"channels","k":"out","code":"ch := make(chan int, 3)\nch <- 1\nch <- 2\nfmt.Println(len(ch), cap(ch))","why":"`len` — сколько значений ждёт в буфере, `cap` — размер буфера. Решать что-то по `len(ch)` в конкурентном коде нельзя: значение устаревает сразу.","o":["2 3","3 3","0 3","ошибка компиляции"],"a":0,"term":"$ go run .\n2 3"},{"id":"ch-unbuf","t":"channels","k":"qa","q":"Чем небуферизованный канал отличается от буферизованного?","ans":"Небуферизованный — это встреча: отправитель ждёт, пока значение заберут. Он и передаёт данные, и синхронизирует горутины. Буферизованный — очередь на N мест: отправка ждёт, только когда буфер полон, чтение — когда пуст. Буфер не лечит дедлок, а прячет его до нагрузки."},{"id":"ch-pool","t":"channels","k":"qa","q":"Как сделать пул из 5 воркеров на каналах?","ans":"Канал задач `jobs` и 5 горутин с `for j := range jobs`. Результаты они пишут в канал `results`. Главная горутина шлёт задачи и закрывает `jobs`. `WaitGroup` ждёт воркеров, после `Wait` закрываем `results`. Короче — `errgroup` с `SetLimit(5)`."},{"id":"sy-race","t":"sync","k":"out","code":"var n int\nvar wg sync.WaitGroup\nfor i := 0; i < 1000; i++ {\n\twg.Add(1)\n\tgo func() {\n\t\tdefer wg.Done()\n\t\tn++\n\t}()\n}\nwg.Wait()\nfmt.Println(n)","why":"`n++` — это три шага: прочитать, прибавить, записать. Две горутины читают одно значение, и один инкремент теряется. Лечится `sync.Mutex` или `atomic.Int64`. Найти гонку помогает `go run -race`.","o":["всегда 1000","как повезёт: часто меньше 1000","ошибка компиляции","panic"],"a":1,"term":"$ go run .\n905\n$ go run -race .\n==================\nWARNING: DATA RACE\n…\nFound 2 data race(s)\nexit status 66"},{"id":"sy-atomic","t":"sync","k":"out","code":"var n atomic.Int64\nvar wg sync.WaitGroup\nfor i := 0; i < 1000; i++ {\n\twg.Add(1)\n\tgo func() {\n\t\tdefer wg.Done()\n\t\tn.Add(1)\n\t}()\n}\nwg.Wait()\nfmt.Println(n.Load())","why":"`n.Add(1)` — атомарная операция процессора, инкременты не теряются. Для одного счётчика это быстрее мьютекса.","o":["1000","как повезёт","0"],"a":0,"term":"$ go run .\n1000"},{"id":"sy-wg-inside","t":"sync","k":"bug","q":"Что не так?","code":"var wg sync.WaitGroup\nfor i := 0; i < 3; i++ {\n\tgo func() {\n\t\twg.Add(1)\n\t\tdefer wg.Done()\n\t\twork(i)\n\t}()\n}\nwg.Wait()","why":"`Add` надо вызывать до `go`, в той горутине, которая потом ждёт. Иначе `Wait` может увидеть счётчик 0 и выйти сразу. С Go 1.25 проще: `wg.Go(func() { work(i) })`.","o":["`Add` внутри горутины: `Wait` может вернуться раньше, чем горутины стартуют","`defer wg.Done()` нельзя вызывать в горутине","`i` общая для всех горутин","Всё правильно"],"a":0},{"id":"sy-mutex-copy","t":"sync","k":"bug","q":"Почему кэш не защищён?","code":"type Cache struct {\n\tmu   sync.Mutex\n\tdata map[string]string\n}\n\nfunc (c Cache) Set(k, v string) {\n\tc.mu.Lock()\n\tdefer c.mu.Unlock()\n\tc.data[k] = v\n}","why":"Мьютекс копируется вместе со структурой, и у каждого вызова свой замок. Нужен `func (c *Cache) Set`. Такое ловит `go vet`.","o":["Получатель по значению: каждый вызов блокирует свою копию мьютекса","`defer Unlock` работает медленно","Мьютекс надо хранить по указателю","Всё правильно"],"a":0},{"id":"sy-reentrant","t":"sync","k":"out","code":"var mu sync.Mutex\nmu.Lock()\nmu.Lock()\nfmt.Println(\"ok\")","why":"Мьютекс в Go не реентерабельный: повторный `Lock` из той же горутины ждёт вечно. Если метод под мьютексом зовёт другой такой же метод, вынеси общую часть в функцию без блокировки.","o":["ok","fatal error: all goroutines are asleep - deadlock!","panic: mutex already locked"],"a":1,"term":"$ go run .\nfatal error: all goroutines are asleep - deadlock!\n\ngoroutine 1 [sync.Mutex.Lock]:\n…\nexit status 2"},{"id":"sy-rw","t":"sync","k":"pick","q":"Чем `sync.RWMutex` отличается от `sync.Mutex`?","why":"Он выгоден, когда чтений гораздо больше, чем записей. Под `RLock` писать нельзя.","o":["Ничем, это синоним","Читать могут многие одновременно (`RLock`), а писатель один и без читателей (`Lock`)","`RWMutex` реентерабельный","`RWMutex` работает между процессами"],"a":1},{"id":"sy-once","t":"sync","k":"out","code":"var once sync.Once\nfor i := 0; i < 3; i++ {\n\tonce.Do(func() {\n\t\tfmt.Println(\"init\", i)\n\t})\n}","why":"`Once.Do` выполняет функцию один раз за всю жизнь объекта, даже из многих горутин. Для ленивой инициализации есть ещё `sync.OnceValue` (Go 1.21).","o":["init 0","init 0\ninit 1\ninit 2","init 2"],"a":0,"term":"$ go run .\ninit 0"},{"id":"sy-pool","t":"sync","k":"qa","q":"Зачем нужен `sync.Pool`?","ans":"Чтобы переиспользовать временные объекты, например буферы, и меньше нагружать сборщик мусора. Пул могут очистить при сборке, поэтому хранить в нём важное нельзя. Перед `Put` объект сбрасывают: `buf.Reset()`."},{"id":"sy-race-find","t":"sync","k":"pick","q":"Как найти гонку данных?","why":"Детектор ловит гонку, только если она случилась во время прогона. Поэтому тесты в CI гоняют с `-race`. С ним программа работает в несколько раз медленнее.","o":["`go vet`","`go test -race` или `go run -race`","`go build -gcflags=-m`","`pprof`"],"a":1},{"id":"sy-errgroup","t":"sync","k":"qa","q":"Чем `errgroup` удобнее `sync.WaitGroup`?","ans":"`errgroup.Group` возвращает первую ошибку из горутин. `errgroup.WithContext` при первой ошибке отменяет общий контекст, и остальные горутины могут остановиться. `SetLimit(n)` ограничивает, сколько горутин работает сразу. Пакет — `golang.org/x/sync/errgroup`."},{"id":"sy-deadlock2","t":"sync","k":"qa","q":"Как получить дедлок на двух мьютексах и как его избежать?","ans":"Горутина A берёт `mu1`, потом `mu2`. Горутина B — `mu2`, потом `mu1`. Каждая держит один замок и ждёт второй. Лечится одним порядком захвата во всём коде или одним мьютексом вместо двух."},{"id":"cx-cancel","t":"context","k":"out","code":"bg := context.Background()\nctx, cancel := context.WithCancel(bg)\ncancel()\n<-ctx.Done()\nfmt.Println(ctx.Err())","why":"После `cancel()` канал `Done()` закрыт, и чтение из него сразу проходит. Причину отдаёт `ctx.Err()`.","o":["<nil>","context canceled","fatal error: deadlock","context deadline exceeded"],"a":1,"term":"$ go run .\ncontext canceled"},{"id":"cx-timeout","t":"context","k":"out","code":"ctx, cancel := context.WithTimeout(\n\tcontext.Background(), 10*time.Millisecond)\ndefer cancel()\nselect {\ncase <-time.After(time.Second):\n\tfmt.Println(\"готово\")\ncase <-ctx.Done():\n\tfmt.Println(ctx.Err())\n}","why":"Таймаут 10 мс наступает раньше секунды. Это ошибка `context.DeadlineExceeded`, проверяй её через `errors.Is`.","o":["готово","context deadline exceeded","context canceled"],"a":1,"term":"$ go run .\ncontext deadline exceeded"},{"id":"cx-tree","t":"context","k":"out","code":"bg := context.Background()\nparent, cancel := context.WithCancel(bg)\nchild, stop := context.WithCancel(parent)\ndefer stop()\ncancel()\nfmt.Println(child.Err())","why":"Отмена идёт сверху вниз: отменил родителя — отменились все дети. Отмена ребёнка родителя не трогает.","o":["<nil>","context canceled","context deadline exceeded"],"a":1,"term":"$ go run .\ncontext canceled"},{"id":"cx-values","t":"context","k":"pick","q":"Что уместно класть в `context.WithValue`?","why":"Значений контекста не видно в сигнатуре, поэтому туда кладут только сквозные данные запроса. Ключ — свой неэкспортируемый тип, чтобы не столкнуться с чужим пакетом.","o":["Зависимости: подключение к базе, логгер, конфиг","Данные запроса: request-id, кто пользователь, трейс","Параметры функции, чтобы не плодить аргументы"],"a":1},{"id":"cx-struct","t":"context","k":"tf","q":"Контекст нормально хранить в поле структуры сервиса.","why":"Контекст живёт столько, сколько один запрос. Его передают первым аргументом: `func (s *Svc) Get(ctx context.Context, id int64)`.","a":false},{"id":"cx-lost-cancel","t":"context","k":"bug","q":"Что не так?","code":"func load(id int) error {\n\tctx, _ := context.WithTimeout(\n\t\tcontext.Background(), time.Second)\n\treturn repo.Get(ctx, id)\n}","why":"Всегда пиши `defer cancel()` сразу после создания. И лучше принимать `ctx` от вызывающего, а не начинать с `Background`: тогда до запроса дойдёт отмена клиента.","o":["`cancel` выброшен: таймер живёт до срока, и `go vet` ругается","Секунды мало для базы","`context.Background()` нельзя передавать дальше","Всё правильно"],"a":0},{"id":"cx-done","t":"context","k":"qa","q":"Как горутина узнаёт, что контекст отменили?","ans":"Ждёт `ctx.Done()` в `select` рядом со своей работой. Канал закрылся — причину отдаёт `ctx.Err()`: `context.Canceled` или `context.DeadlineExceeded`. Длинный цикл без каналов проверяет `ctx.Err() != nil` на каждой итерации."},{"id":"cx-without","t":"context","k":"pick","q":"После ответа клиенту нужно в фоне записать аудит, но контекст запроса отменится. Что взять?","why":"`WithoutCancel` (Go 1.21) сохраняет значения, например request-id, но не отменяется вместе с запросом. Таймаут на фоновую работу всё равно поставь.","o":["`context.Background()` и потерять request-id","`context.WithoutCancel(ctx)`","Тот же `ctx`","`context.TODO()`"],"a":1},{"id":"gn-max","t":"generics","k":"out","code":"func Max[T cmp.Ordered](a, b T) T {\n\tif a > b {\n\t\treturn a\n\t}\n\treturn b\n}\n\nfunc main() {\n\tfmt.Println(Max(3, 7), Max(\"a\", \"b\"))\n}","why":"`cmp.Ordered` — типы, у которых есть `<` и `>`: числа и строки. Тип выводится из аргументов. С Go 1.21 есть и встроенные `max` и `min`.","o":["7 b","ошибка компиляции","7 a"],"a":0,"term":"$ go run .\n7 b"},{"id":"gn-tilde","t":"generics","k":"out","code":"type Number interface{ int | float64 }\n\ntype MyInt int\n\nfunc Sum[T Number](xs []T) T {\n\tvar s T\n\tfor _, x := range xs {\n\t\ts += x\n\t}\n\treturn s\n}\n\nfunc main() {\n\tfmt.Println(Sum([]MyInt{1, 2}))\n}","why":"`int | float64` пускает только сами эти типы, а `MyInt` — новый тип. Нужна тильда: `~int | ~float64` значит «любой тип, у которого в основе int или float64».","o":["3","ошибка компиляции","panic"],"a":1,"term":"$ go run .\n# x\n./prog.go:14:17: MyInt does not satisfy Number (possibly missing ~ for int in Number)\n"},{"id":"gn-method","t":"generics","k":"out","code":"type Box struct{}\n\nfunc (b Box) Map[T any](v T) T {\n\treturn v\n}\n\nfunc main() {\n\tfmt.Println(Box{}.Map(1))\n}","why":"У методов не бывает своих параметров типа. Метод может пользоваться только параметрами своего типа: `func (b Box[T]) Get() T`. Нужен свой параметр — пиши функцию.","o":["1","ошибка компиляции","panic"],"a":1,"term":"$ go run .\n# x\n./prog.go:3:17: syntax error: method must have no type parameters\n"},{"id":"gn-comparable","t":"generics","k":"pick","q":"Какое ограничение нужно параметру `K`, чтобы сделать `map[K]V`?","why":"Ключ мапы и `==` требуют `comparable`. `cmp.Ordered` тоже подойдёт, но зря сузит типы: оно нужно для `<` и `>`.","o":["`any`","`comparable`","`fmt.Stringer`"],"a":1},{"id":"gn-zero","t":"generics","k":"out","code":"func First[T any](xs []T) T {\n\tvar zero T\n\tif len(xs) == 0 {\n\t\treturn zero\n\t}\n\treturn xs[0]\n}\n\nfunc main() {\n\tfmt.Printf(\"%q %v\\n\",\n\t\tFirst([]string{}), First([]int{}))\n}","why":"`var zero T` даёт нулевое значение любого типа: пустую строку, 0, nil. Так дженерик возвращает «ничего».","o":["\"\" 0","nil nil","panic: index out of range"],"a":0,"term":"$ go run .\n\"\" 0"},{"id":"gn-slices","t":"generics","k":"out","code":"s := []int{3, 1, 2}\nslices.Sort(s)\ni, ok := slices.BinarySearch(s, 2)\nhas := slices.Contains(s, 5)\nfmt.Println(s, i, ok, has)","why":"Пакеты `slices` и `maps` (Go 1.21) — дженерики на каждый день. `BinarySearch` возвращает индекс и признак, нашёл ли.","o":["[1 2 3] 1 true false","[3 1 2] 2 true false","[1 2 3] 2 true false"],"a":0,"term":"$ go run .\n[1 2 3] 1 true false"},{"id":"gn-when","t":"generics","k":"qa","q":"Когда дженерики уместны, а когда нет?","ans":"Уместны, когда один и тот же код работает с разными типами: контейнеры, `slices.Contains`, `Map` и `Filter`, пул воркеров с типизированным результатом. Не нужны, когда хватает интерфейса с методом, как `io.Reader`. Правило: начни с конкретного типа и обобщай, когда появился второй."},{"id":"mm-escape","t":"memory","k":"pick","q":"Где окажется `x`?","code":"func newInt() *int {\n\tx := 42\n\treturn &x\n}","why":"Висячих указателей в Go нет, это решает escape analysis. Посмотреть решение компилятора можно через `go build -gcflags=-m`: он напишет `moved to heap: x`.","o":["На стеке, и указатель станет висячим","В куче: компилятор видит, что `x` живёт дольше функции","Ошибка компиляции"],"a":1},{"id":"mm-append-stack","t":"memory","k":"out","q":"Что выведет? Go 1.26","code":"var s []int\nfor i := 0; i < 5; i++ {\n\ts = append(s, i)\n\tfmt.Print(cap(s), \" \")\n}","why":"Слайс не уходит из функции, и компилятор сразу даёт ему буфер на стеке на 32 байта: это 4 числа `int`. Пятый элемент уже не влез, и дальше обычный рост в куче. Если напечатать сам `s` через `fmt.Println(s)`, слайс уйдёт в кучу, и будет классическое 1 2 4 4 8.","o":["1 2 4 4 8","4 4 4 4 8","1 2 3 4 5"],"a":1,"term":"$ go run .\n4 4 4 4 8"},{"id":"mm-new-stack","t":"memory","k":"tf","q":"Всё, что создано через `new()` или `&T{}`, всегда попадает в кучу.","why":"Решает escape analysis, а не способ создания. Если указатель не выходит за пределы функции, объект останется на стеке даже с `new`.","a":false},{"id":"mm-gc","t":"memory","k":"qa","q":"Как работает сборщик мусора в Go?","ans":"Конкурентный mark-and-sweep с трёхцветной разметкой: он работает параллельно с программой, паузы короткие. Пока идёт разметка, write barrier не даёт потерять объект. Поколений нет, объекты не перемещаются. Когда запускаться, решают `GOGC` (по умолчанию 100: куча выросла вдвое) и мягкий лимит `GOMEMLIMIT`."},{"id":"mm-memlimit","t":"memory","k":"pick","q":"Что делает `GOMEMLIMIT`?","why":"Появился в Go 1.19. В контейнере его ставят чуть ниже лимита памяти пода, чтобы GC успел освободить память до OOM-kill.","o":["Жёсткий лимит: превысил — паника","Мягкий лимит памяти: чем ближе к нему, тем чаще работает GC","Лимит числа горутин","Размер стека"],"a":1},{"id":"mm-subslice","t":"memory","k":"bug","q":"Чем плох этот код? Файл весит 100 МБ.","code":"func header(path string) ([]byte, error) {\n\tdata, err := os.ReadFile(path)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\treturn data[:4], nil\n}","why":"`data[:4]` смотрит в тот же массив на 100 МБ, и GC не освободит его, пока жив результат. Скопируй нужное: `bytes.Clone(data[:4])`.","o":["Результат держит в памяти все 100 МБ","`data[:4]` копирует 100 МБ","`ReadFile` читает не весь файл","Ничем"],"a":0},{"id":"mm-alloc","t":"memory","k":"pick","q":"Как снизить нагрузку на GC в горячем коде?","why":"Чем меньше аллокаций, тем реже запускается GC. `make([]T, 0, n)` вместо роста по одному, буферы из `sync.Pool`. Где аллокации, покажет `go test -bench . -benchmem`.","o":["Почаще вызывать `runtime.GC()`","Меньше аллокаций: ёмкость слайса заранее, `sync.Pool`, меньше указателей","Выключить GC: `GOGC=off`","Заменить всё на `unsafe`"],"a":1},{"id":"mm-pprof","t":"memory","k":"qa","q":"Сервис ест память и CPU. Как искать причину?","ans":"Подключить `net/http/pprof` и снять профили. `go tool pprof http://host/debug/pprof/heap` покажет, кто держит память, `/debug/pprof/profile?seconds=30` — где тратится CPU, `/debug/pprof/goroutine` — утечки горутин. Смотреть `top` и граф вызовов. Плюс метрики рантайма в Prometheus: горутины, куча, паузы GC."},{"id":"ts-table","t":"tests","k":"qa","q":"Как пишут табличные тесты?","ans":"Слайс кейсов: имя, вход, ожидание. Потом цикл `for _, tc := range cases` и в нём `t.Run(tc.name, func(t *testing.T) {...})`. Каждый кейс — свой подтест: видно, какой упал, и можно запустить один через `-run 'TestSum/negative'`."},{"id":"ts-parallel","t":"tests","k":"tf","q":"Подтесты, которые вызвали `t.Parallel()`, выполняются одновременно друг с другом.","why":"Параллельные подтесты ждут, пока закончится функция родителя, и потом идут вместе. До Go 1.22 переменную цикла в них надо было копировать: `tc := tc`.","a":true},{"id":"ts-bench","t":"tests","k":"pick","q":"Как писать бенчмарк в Go 1.24+?","why":"`b.Loop` сам подбирает число итераций и не даёт компилятору выбросить код. Старая форма — `for i := 0; i < b.N; i++`. Запуск: `go test -bench . -benchmem`.","o":["`for i := 0; i < 1000; i++ { ... }`","`for b.Loop() { ... }`","Замерить `time.Since` вручную"],"a":1},{"id":"ts-fake","t":"tests","k":"qa","q":"Как подменить базу в юнит-тесте?","ans":"Сервис зависит от маленького интерфейса, например `UserRepo` с методом `Get`. В тесте — фейк на мапе или мок из mockery или gomock. Интеграционный тест с настоящей базой в Docker (testcontainers-go) ловит то, что мок не поймает: SQL, миграции, блокировки."},{"id":"ts-count","t":"tests","k":"tf","q":"`go test` кэширует результаты, а `-count=1` заставляет прогнать тесты заново.","why":"Кэш сбрасывается и сам, когда меняется код или файлы, которые читает тест. `-count=1` — привычный способ его обойти.","a":true},{"id":"ts-httptest","t":"tests","k":"pick","q":"Как проверить HTTP-хендлер без запуска сервера?","why":"`httptest.NewRequest` создаёт запрос, рекордер собирает код ответа, заголовки и тело. Для проверки HTTP-клиента есть `httptest.NewServer`.","o":["Поднять сервер на `:8080` и дёрнуть curl","`httptest.NewRecorder()` и `handler.ServeHTTP(rec, req)`","Замокать весь `net/http`"],"a":1},{"id":"ts-vet","t":"tests","k":"pick","q":"Что ловит `go vet`?","why":"`go vet` читает код, не запуская его. Гонки ловит только `-race` во время работы. `go test` сам запускает часть проверок `vet`.","o":["Гонки данных","Подозрительный код: копию мьютекса, неверный формат `Printf`, выброшенный `cancel`","Медленные функции","Утечки памяти"],"a":1},{"id":"ht-timeout","t":"http","k":"tf","q":"`http.Get` по умолчанию ждёт ответа не дольше 30 секунд.","why":"У `http.DefaultClient` таймаута нет, запрос может висеть вечно. Делай свой клиент: `&http.Client{Timeout: 5 * time.Second}`, или передавай `ctx` с таймаутом.","a":false},{"id":"ht-body","t":"http","k":"bug","code":"resp, err := http.Get(url)\ndefer resp.Body.Close()\nif err != nil {\n\treturn err\n}","why":"Сначала `if err != nil`, потом `defer resp.Body.Close()`. Закрывать тело нужно всегда, иначе соединение не вернётся в пул.","o":["`defer` стоит до проверки `err`: при ошибке `resp` равен nil, будет паника","`Body` закрывать не нужно","`http.Get` не возвращает ошибку","Надо вызывать `resp.Close()`"],"a":0},{"id":"ht-mux","t":"http","k":"pick","q":"Как в Go 1.22+ без сторонних роутеров принять `GET /users/{id}`?","why":"С Go 1.22 стандартный `ServeMux` понимает метод и параметры в пути.","o":["Только через gorilla/mux или chi","`mux.HandleFunc(\"GET /users/{id}\", h)` и `r.PathValue(\"id\")`","Разобрать `r.URL.Path` через `strings.Split`"],"a":1},{"id":"ht-shutdown","t":"http","k":"qa","q":"Как сделать graceful shutdown HTTP-сервиса?","ans":"Ловим SIGTERM: `ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM)`. Сервер крутится в горутине с `ListenAndServe`. По сигналу вызываем `srv.Shutdown(ctx)` с таймаутом: новые соединения не принимаются, текущие запросы дорабатывают. Потом закрываем консьюмеров и базу."},{"id":"ht-concurrent","t":"http","k":"tf","q":"Хендлеры `net/http` вызываются конкурентно: разные запросы могут выполняться одновременно.","why":"Сервер запускает горутину на каждое соединение, а в HTTP/2 — на каждый запрос. Поэтому общие данные хендлеров, например мапу или счётчик, защищают мьютексом или атомиком.","a":true},{"id":"ht-middleware","t":"http","k":"pick","q":"Что такое middleware в `net/http`?","why":"Так делают логирование, request-id, `recover` паник, авторизацию и метрики.","o":["Отдельный процесс-прокси","Функция `func(http.Handler) http.Handler`: оборачивает хендлер и работает до и после него","Метод `ServeMux`"],"a":1},{"id":"ht-grpc","t":"http","k":"qa","q":"gRPC или REST между сервисами?","ans":"gRPC: контракт в protobuf, клиент и сервер генерируются, бинарный формат, HTTP/2, стриминг. Это удобно внутри системы. REST с JSON проще отлаживать через curl, его понимают браузер и партнёры — это для внешнего API. Пример из опыта: внутри платформы gRPC, а партнёрам — REST с OpenAPI."},{"id":"ht-retry","t":"http","k":"qa","q":"Платёжный API не ответил за таймаут. Повторять запрос?","ans":"Только если операция идемпотентна. Шлём ключ идемпотентности, тот же при повторе: сервер вернёт прошлый результат и не спишет деньги дважды. Повторы — с растущей паузой и случайным разбросом, с лимитом попыток. Если статус неясен, сначала запроси статус операции, а не повторяй вслепую."},{"id":"db-rows","t":"db","k":"bug","q":"Что забыли?","code":"rows, err := db.QueryContext(ctx, q)\nif err != nil {\n\treturn err\n}\nfor rows.Next() {\n\t// Scan\n}\nreturn nil","why":"`rows` держат соединение из пула. `Next` закрывает их сам, только когда дошёл до конца, а ранний `return` или паника оставят соединение занятым. `rows.Err()` покажет ошибку, из-за которой цикл кончился раньше.","o":["`defer rows.Close()` и проверку `rows.Err()`","Транзакцию: без неё `Query` нельзя","Вызов `rows.First()`","Ничего"],"a":0},{"id":"db-norows","t":"db","k":"pick","q":"Как понять, что `QueryRow` ничего не нашёл?","why":"Пустой результат приходит ошибкой из `Scan`. Обычно её превращают в свою, например `ErrUserNotFound`.","o":["`row == nil`","`Scan` вернул ошибку, и `errors.Is(err, sql.ErrNoRows)`","Поля остались нулевыми","Будет паника"],"a":1},{"id":"db-tx","t":"db","k":"qa","q":"Как правильно оформить транзакцию в Go?","ans":"`tx, err := db.BeginTx(ctx, nil)`. Сразу `defer tx.Rollback()` — после `Commit` он ничего не делает. Все запросы идут через `tx`, а не через `db`. В конце `return tx.Commit()`. Так транзакция откатится при любой ошибке и при панике."},{"id":"db-pool","t":"db","k":"pick","q":"Что настраивают у пула соединений `database/sql`?","why":"`MaxOpenConns` — потолок соединений к базе, считай его на все поды вместе. `ConnMaxLifetime` нужен, чтобы соединения обновлялись после переключения реплик и балансировщиков.","o":["Ничего: на каждый запрос новое соединение","`SetMaxOpenConns`, `SetMaxIdleConns`, `SetConnMaxLifetime`","Только `GOMAXPROCS`"],"a":1},{"id":"db-injection","t":"db","k":"bug","q":"Что не так?","code":"q := \"SELECT id FROM users \" +\n\t\"WHERE name = '\" + name + \"'\"\nrows, err := db.QueryContext(ctx, q)","why":"Правильно так: `db.QueryContext(ctx, \"SELECT id FROM users WHERE name = $1\", name)`. Драйвер отправит значение отдельно от текста запроса.","o":["SQL-инъекция: значение надо передать параметром `$1`","Склейка строк медленная","Нет `LIMIT`","Всё правильно"],"a":0},{"id":"db-ctx","t":"db","k":"pick","q":"Запрос к базе завис. Как не дать ему висеть вечно?","why":"Когда истекает таймаут контекста, драйвер отменяет запрос на сервере. `statement_timeout` страхует со стороны базы.","o":["`time.Sleep` и проверить","`ctx` с таймаутом в `QueryContext`, а в PostgreSQL ещё `statement_timeout`","Увеличить пул соединений"],"a":1},{"id":"db-retry","t":"db","k":"qa","q":"Как в Go повторить транзакцию при ошибке сериализации PostgreSQL?","ans":"Достать код ошибки: `var pgErr *pgconn.PgError` и `errors.As(err, &pgErr)`. Код `40001` — serialization_failure, `40P01` — deadlock. Тогда повторить всю транзакцию с начала: 3–5 попыток с паузой. Остальные ошибки не повторять."},{"id":"db-n1","t":"db","k":"qa","q":"Что такое N+1 и как его лечить в Go?","ans":"Это один запрос за списком и потом по запросу на каждый элемент: 100 заказов — 101 запрос. Лечится одним запросом с JOIN или вторым запросом `WHERE id = ANY($1)` и сборкой результата в мапу по id."},{"id":"db-balance","t":"db","k":"pick","q":"Как списать деньги с баланса без гонки?","why":"Проверка и запись идут одной операцией над строкой. `RowsAffected() == 0` — значит, денег не хватило. Мьютекс не спасёт: подов несколько.","o":["`SELECT` баланса, проверка в Go, потом `UPDATE`","Один запрос: `UPDATE ... SET balance = balance - $1 WHERE id = $2 AND balance >= $1`","Мьютекс в Go-сервисе","Кэш в Redis"],"a":1},{"id":"db-outbox","t":"db","k":"qa","q":"Как надёжно записать в базу и отправить событие в Kafka?","ans":"Transactional outbox. В одной транзакции пишем изменение и строку в таблицу `outbox`. Отдельный воркер читает `outbox`, шлёт в Kafka и помечает отправленное. Доставка at-least-once, поэтому консьюмер должен быть идемпотентным."},{"id":"kf-order","t":"kafka","k":"pick","q":"Где Kafka гарантирует порядок сообщений?","why":"Нужен порядок по клиенту — сделай id клиента ключом сообщения. Сообщения с одним ключом всегда попадают в одну партицию.","o":["Во всём топике","Внутри одной партиции","Нигде","Внутри consumer group"],"a":1},{"id":"kf-group","t":"kafka","k":"pick","q":"В топике 6 партиций, в группе 8 консьюмеров. Сколько из них читают?","why":"Внутри группы партицию читает только один консьюмер. Поэтому чтение не масштабируется дальше числа партиций.","o":["8","6, а двое простаивают","1","3"],"a":1},{"id":"kf-commit","t":"kafka","k":"qa","q":"Как сделать at-least-once в консьюмере и чем за это платим?","ans":"Коммитим offset только после обработки. Если упали между обработкой и коммитом, сообщение придёт снова. Значит, обработчик должен быть идемпотентным: таблица обработанных id или upsert."},{"id":"kf-dlq","t":"kafka","k":"qa","q":"Сообщение не обрабатывается из-за кривых данных. Что делать?","ans":"Не держать партицию вечными повторами. Несколько попыток с паузой, потом — в DLQ-топик с причиной, и алерт. Дальше разбор руками или повторная отправка после исправления."},{"id":"kf-rebalance","t":"kafka","k":"tf","q":"Ребаланс consumer group проходит незаметно для консьюмеров.","why":"При ребалансе партиции переезжают между консьюмерами, и чтение встаёт на паузу. Частая причина — обработка дольше `max.poll.interval.ms`. Паузы меньше со стратегией cooperative-sticky.","a":false}];
+const GO_VERSION = "go1.26.2";
+const KEY = 'go-lenta.v1';
+const THEME_KEY = 'go-lenta.theme';
+
+const TOPICS = {
+  slices: { name: 'Слайсы', g: '[]', h: 189 },
+  maps: { name: 'Мапы', g: 'k:v', h: 147 },
+  strings: { name: 'Строки', g: '""', h: 126 },
+  ifaces: { name: 'Интерфейсы', g: 'any', h: 294 },
+  structs: { name: 'Структуры', g: '{}', h: 252 },
+  funcs: { name: 'defer и замыкания', g: 'fn', h: 336 },
+  errors: { name: 'Ошибки', g: 'err', h: 0 },
+  goroutines: { name: 'Горутины', g: 'go', h: 210 },
+  channels: { name: 'Каналы', g: '<-', h: 168 },
+  sync: { name: 'sync и гонки', g: 'mu', h: 42 },
+  context: { name: 'Контекст', g: 'ctx', h: 315 },
+  generics: { name: 'Дженерики', g: '[T]', h: 273 },
+  memory: { name: 'Память и GC', g: 'GC', h: 84 },
+  tests: { name: 'Тесты', g: 'ok', h: 105 },
+  http: { name: 'HTTP', g: 'GET', h: 231 },
+  db: { name: 'Go и база', g: 'SQL', h: 63 },
+  kafka: { name: 'Kafka', g: 'msg', h: 21 },
+};
+const KIND = { out: 'Что выведет?', bug: 'Найди баг', pick: 'Вопрос', tf: 'Правда или миф?', qa: 'Ответь вслух' };
+const LEVELS = [[0, 'Стажёр'], [15, 'Джун'], [45, 'Мидл'], [90, 'Сеньор'], [135, 'Лид']];
+const MIN = 6e4, DAY = 864e5;
+// Интервалы повторения по «коробкам»: ошибка — снова через 10 минут, дальше 1, 3, 7, 21 и 60 дней.
+const STEP = [0, 10 * MIN, DAY, 3 * DAY, 7 * DAY, 21 * DAY, 60 * DAY];
+const LEARNED = 3;
+const SUMMARY_EVERY = 15;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const ICON = {
+  heart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.3s-7.4-4.5-9.3-9.1C1.3 7.9 3.5 4.6 7 4.6c2 0 3.6 1.1 5 3 1.4-1.9 3-3 5-3 3.5 0 5.7 3.3 4.3 6.6-1.9 4.6-9.3 9.1-9.3 9.1z"/></svg>',
+  down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  up: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
+};
+
+/* ---------- состояние ---------- */
+
+let storageOk = true;
+function blank() { return { v: 1, c: {}, likes: {}, days: {}, best: 0, goal: 20, topics: [] }; }
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s && s.v === 1) return Object.assign(blank(), s);
+    }
+  } catch (e) { storageOk = false; }
+  return blank();
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); storageOk = true; } catch (e) { storageOk = false; }
+}
+let state = load();
+const byId = Object.fromEntries(CARDS.map(c => [c.id, c]));
+state.topics = state.topics.filter(t => TOPICS[t]);
+
+const session = { queued: [], seen: new Set(), requeue: [], appended: 0, answered: 0, right: 0, streak: 0, best: 0, topicStat: {}, missOk: new Set() };
+let tab = 'feed';
+let current = null;
+
+const st = id => state.c[id];
+const topicOn = t => !state.topics.length || state.topics.includes(t);
+const isLiked = id => (state.likes[id] || 0) > 0;
+const struggling = id => { const s = st(id); return !!s && s.w > 0 && s.b <= 2; };
+
+function dayKey(t = Date.now()) {
+  const d = new Date(t);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function today() { return state.days[dayKey()] || { n: 0, r: 0 }; }
+function dayStreak() {
+  const d = new Date();
+  let n = 0;
+  if (!(state.days[dayKey(d)] || {}).n) d.setDate(d.getDate() - 1);
+  while ((state.days[dayKey(d)] || {}).n) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+function plural(n, one, few, many) {
+  const a = n % 10, b = n % 100;
+  if (a === 1 && b !== 11) return one;
+  if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return few;
+  return many;
+}
+function learnedCount(list = CARDS) { return list.filter(c => (st(c.id) || {}).b >= LEARNED).length; }
+
+function grade(id, res) {
+  const now = Date.now();
+  const s = state.c[id] || (state.c[id] = { b: 0, n: 0, r: 0, w: 0, d: 0, l: 0 });
+  s.n++; s.l = now;
+  if (res === 'ok') { s.r++; s.b = s.b === 0 ? 2 : Math.min(STEP.length - 1, s.b + 1); }
+  else { if (res === 'bad') s.w++; s.b = 1; }
+  s.d = now + (res === 'half' ? 60 * MIN : STEP[s.b]);
+  const k = dayKey(now);
+  const d = state.days[k] || (state.days[k] = { n: 0, r: 0 });
+  d.n++;
+  if (res === 'ok') d.r++;
+  if (res !== 'ok') session.requeue.push({ id, at: session.appended + (res === 'half' ? 8 : 4) });
+  session.answered++;
+  const ts = session.topicStat[byId[id].t] || (session.topicStat[byId[id].t] = { n: 0, r: 0 });
+  ts.n++;
+  if (res === 'ok') { session.right++; ts.r++; session.streak++; if (tab === 'miss') session.missOk.add(id); }
+  else session.streak = 0;
+  session.best = Math.max(session.best, session.streak);
+  state.best = Math.max(state.best || 0, session.best);
+  save();
+}
+
+/* ---------- выбор следующей карточки ---------- */
+
+function pool() {
+  let list = CARDS.filter(c => topicOn(c.t));
+  if (tab === 'miss') list = list.filter(c => struggling(c.id) && !session.missOk.has(c.id));
+  if (tab === 'saved') list = list.filter(c => isLiked(c.id));
+  return list;
+}
+function pickNext() {
+  const P = pool();
+  if (!P.length) return null;
+  const now = Date.now();
+  const inPool = new Set(P.map(c => c.id));
+  const recent = session.queued.slice(-6);
+  const lastId = session.queued[session.queued.length - 1];
+  const lastTopic = lastId && byId[lastId].t;
+
+  for (let i = 0; i < session.requeue.length; i++) {
+    const q = session.requeue[i];
+    if (q.at <= session.appended && inPool.has(q.id) && !recent.slice(-2).includes(q.id)) {
+      session.requeue.splice(i, 1);
+      return byId[q.id];
+    }
+  }
+  const due = P.filter(c => { const s = st(c.id); return s && s.b > 0 && s.d <= now && !recent.includes(c.id); })
+    .sort((a, b) => st(a.id).d - st(b.id).d);
+  const fresh = P.filter(c => !(st(c.id) || {}).n && !session.seen.has(c.id) && !session.queued.includes(c.id));
+  if (due.length && (!fresh.length || session.appended % 3 !== 2)) return due[0];
+  if (fresh.length) {
+    const other = fresh.filter(c => c.t !== lastTopic);
+    const from = other.length ? other : fresh;
+    return from[Math.floor(Math.random() * from.length)];
+  }
+  if (tab === 'miss') return P.find(c => !recent.includes(c.id)) || null;
+  const rest = P.filter(c => !recent.slice(-Math.min(6, P.length - 1)).includes(c.id))
+    .sort((a, b) => ((st(a.id) || {}).b || 0) - ((st(b.id) || {}).b || 0) || ((st(a.id) || {}).l || 0) - ((st(b.id) || {}).l || 0));
+  return rest[0] || P.find(c => c.id !== lastId) || P[0];
+}
+
+/* ---------- отрисовка ---------- */
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function button(cls, text) { const b = el('button', cls, text); b.type = 'button'; return b; }
+function rich(text) {
+  const frag = document.createDocumentFragment();
+  text.split(/(`[^`]+`)/).forEach(part => {
+    if (!part) return;
+    if (part.length > 2 && part[0] === '`' && part[part.length - 1] === '`') frag.append(el('code', 'i', part.slice(1, -1)));
+    else frag.append(part);
+  });
+  return frag;
+}
+
+const KW = new Set('break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var'.split(' '));
+const BUILTIN = new Set('append cap clear close copy delete len make max min new panic print println recover'.split(' '));
+const TYPES = new Set('any bool byte comparable error float32 float64 int int8 int16 int32 int64 rune string uint uint8 uint16 uint32 uint64 uintptr'.split(' '));
+const CONSTS = new Set(['nil', 'true', 'false', 'iota']);
+const TOKEN = /(\/\/[^\n]*)|("(?:[^"\\\n]|\\.)*"|`[^`]*`|'(?:[^'\\\n]|\\.)*')|(\b\d[\d_]*(?:\.\d+)?\b)|([A-Za-z_]\w*)/g;
+function highlight(code) {
+  const frag = document.createDocumentFragment();
+  let last = 0, m;
+  TOKEN.lastIndex = 0;
+  while ((m = TOKEN.exec(code))) {
+    if (m.index > last) frag.append(code.slice(last, m.index));
+    let cls = null;
+    if (m[1]) cls = 'c';
+    else if (m[2]) cls = 's';
+    else if (m[3]) cls = 'n';
+    else {
+      const w = m[4];
+      if (KW.has(w)) cls = 'k';
+      else if (TYPES.has(w)) cls = 'y';
+      else if (CONSTS.has(w)) cls = 'n';
+      else if (BUILTIN.has(w) || code[TOKEN.lastIndex] === '(') cls = 'f';
+    }
+    frag.append(cls ? el('span', cls, m[0]) : m[0]);
+    last = TOKEN.lastIndex;
+  }
+  if (last < code.length) frag.append(code.slice(last));
+  return frag;
+}
+function terminal(text) {
+  const pre = el('pre', 'term');
+  pre.setAttribute('aria-label', 'Вывод программы');
+  const lines = text.split('\n');
+  lines.forEach((line, i) => {
+    let cls = null;
+    if (line.startsWith('$ ')) cls = 'p';
+    else if (/^(panic: |fatal error: |\.\/prog\.go:|WARNING: DATA RACE|Found \d+ data race)/.test(line)) cls = 'e';
+    else if (/^(# |goroutine |…|exit status|=+$)/.test(line)) cls = 'd';
+    pre.append(cls ? el('span', cls, line) : line);
+    if (i < lines.length - 1) pre.append('\n');
+  });
+  return pre;
+}
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+function setLike(btn, on) {
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.setAttribute('aria-label', on ? 'Убрать из избранного' : 'В избранное');
+}
+
+function shell(h, cls) {
+  const art = el('article', 'card' + (cls ? ' ' + cls : ''));
+  const panel = el('div', 'panel');
+  panel.style.setProperty('--h', h);
+  const inner = el('div', 'inner');
+  const body = el('div', 'body');
+  panel.append(inner);
+  art.append(panel);
+  return { art, inner, body };
+}
+
+function buildCard(c) {
+  const T = TOPICS[c.t];
+  const { art, inner, body } = shell(T.h);
+  art.dataset.id = c.id;
+  art.setAttribute('aria-label', T.name + '. ' + KIND[c.k]);
+
+  const head = el('div', 'head');
+  const ava = el('span', 'ava', T.g);
+  ava.setAttribute('aria-hidden', 'true');
+  const who = el('span', 'who');
+  who.append(el('b', null, T.name), el('small', null, KIND[c.k]));
+  const like = button('like');
+  like.innerHTML = ICON.heart;
+  setLike(like, isLiked(c.id));
+  like.addEventListener('click', () => toggleLike(c.id));
+  head.append(ava, who, like);
+  inner.append(head, body);
+
+  if (c.k === 'out') { if (c.q) body.append(el('p', 'q note', c.q)); }
+  else if (c.k === 'bug') { const q = el('p', 'q'); q.append(rich(c.q || 'Где баг?')); body.append(q); }
+  else { const q = el('p', 'q'); q.append(rich(c.q)); body.append(q); }
+
+  if (c.code) {
+    const box = el('div', 'code');
+    const ch = el('div', 'code-head');
+    ch.append(el('span', null, 'prog.go'), el('span', null, c.term ? GO_VERSION : ''));
+    const pre = el('pre');
+    const code = el('code');
+    code.append(highlight(c.code));
+    pre.append(code);
+    box.append(ch, pre);
+    body.append(box);
+  }
+
+  if (c.k === 'tf') {
+    const row = el('div', 'tf');
+    [[true, 'Правда'], [false, 'Миф']].forEach(([v, label], n) => {
+      const b = button('opt');
+      b.dataset.v = String(v);
+      const num = el('span', 'num', String(n + 1));
+      num.setAttribute('aria-hidden', 'true');
+      b.append(num, el('span', 'txt', label));
+      b.addEventListener('click', () => chooseTF(art, c, v));
+      row.append(b);
+    });
+    body.append(row);
+  } else if (c.k === 'qa') {
+    const rv = button('reveal', 'Показать ответ');
+    rv.addEventListener('click', () => revealQA(art, c));
+    body.append(rv);
+  } else {
+    const box = el('div', 'opts');
+    shuffle(c.o.map((_, i) => i)).forEach((i, n) => {
+      const b = button('opt' + (c.k === 'out' ? ' mono' : ''));
+      b.dataset.i = String(i);
+      const num = el('span', 'num', String(n + 1));
+      num.setAttribute('aria-hidden', 'true');
+      const txt = el('span', 'txt');
+      txt.append(c.k === 'out' ? document.createTextNode(c.o[i]) : rich(c.o[i]));
+      b.append(num, txt);
+      b.addEventListener('click', () => choose(art, c, i));
+      box.append(b);
+    });
+    body.append(box);
+  }
+  return art;
+}
+
+function choose(art, c, i) {
+  if (art.classList.contains('done')) return;
+  art.classList.add('done');
+  art.querySelectorAll('.opts .opt').forEach(b => {
+    const bi = Number(b.dataset.i);
+    if (bi === c.a) b.classList.add('right');
+    else if (bi === i) b.classList.add('wrong');
+    b.setAttribute('aria-disabled', 'true');
+  });
+  finish(art, c, i === c.a ? 'ok' : 'bad');
+}
+function chooseTF(art, c, v) {
+  if (art.classList.contains('done')) return;
+  art.classList.add('done');
+  art.querySelectorAll('.tf .opt').forEach(b => {
+    const bv = b.dataset.v === 'true';
+    if (bv === c.a) b.classList.add('right');
+    else if (bv === v) b.classList.add('wrong');
+    b.setAttribute('aria-disabled', 'true');
+  });
+  finish(art, c, v === c.a ? 'ok' : 'bad');
+}
+function revealQA(art, c) {
+  if (art.classList.contains('revealed')) return;
+  art.classList.add('revealed');
+  const body = art.querySelector('.body');
+  body.querySelector('.reveal').remove();
+  const ans = el('p', 'answer');
+  ans.append(rich(c.ans));
+  const grades = el('div', 'grades');
+  [['ok', 'Знал'], ['half', 'Частично'], ['bad', 'Не знал']].forEach(([res, label], n) => {
+    const b = button('opt ' + res);
+    const num = el('span', 'num', String(n + 1));
+    num.setAttribute('aria-hidden', 'true');
+    b.append(num, el('span', 'txt', label));
+    b.addEventListener('click', () => {
+      if (art.classList.contains('done')) return;
+      art.classList.add('done');
+      b.classList.add('picked');
+      finish(art, c, res);
+    });
+    grades.append(b);
+  });
+  body.append(ans, grades);
+  scrollIntoInner(art, grades);
+}
+
+function finish(art, c, res) {
+  const goalBefore = today().n >= state.goal;
+  grade(c.id, res);
+  buzz(res === 'ok' ? 12 : [18, 40, 18]);
+
+  const result = el('div', 'result');
+  const verdict = el('p', 'verdict ' + res);
+  verdict.append(res === 'ok' ? 'Верно' : res === 'half' ? 'Частично' : c.k === 'qa' ? 'Повторим' : 'Мимо');
+  let note = '';
+  if (c.k === 'tf') note = c.a ? 'это правда' : 'это миф';
+  if (res === 'ok' && session.streak >= 2) note = (note ? note + ' · ' : '') + 'серия ' + session.streak;
+  if (res !== 'ok') note = (note ? note + ' · ' : '') + 'вернётся через пару карточек';
+  if (note) verdict.append(el('small', null, note));
+  result.append(verdict);
+  if (c.term) result.append(terminal(c.term));
+  if (c.why) { const why = el('p', 'why'); why.append(rich(c.why)); result.append(why); }
+  const next = button('next');
+  next.innerHTML = 'Дальше ' + ICON.down;
+  next.addEventListener('click', () => go(1));
+  result.append(next);
+  art.querySelector('.body').append(result);
+  scrollIntoInner(art, verdict);
+
+  updateBar();
+  if ([5, 10, 20, 30, 50].includes(session.streak)) toast(session.streak + ' подряд без ошибок');
+  if (!goalBefore && today().n >= state.goal) insertAfter(art, goalCard());
+  else if (session.answered % SUMMARY_EVERY === 0) insertAfter(art, summaryCard());
+}
+
+function scrollIntoInner(art, target) {
+  const inner = art.querySelector('.inner');
+  requestAnimationFrame(() => {
+    const r = target.getBoundingClientRect(), ir = inner.getBoundingClientRect();
+    const overflow = r.bottom - ir.bottom + 16;
+    if (overflow > 0) inner.scrollBy({ top: Math.min(overflow, r.top - ir.top - 12), behavior: reduceMotion ? 'auto' : 'smooth' });
+  });
+}
+
+function specialCard({ h = 250, kicker, big, lines = [], actions = [], hint, end = false, kind }) {
+  const { art, inner, body } = shell(h, 'special');
+  if (end) art.dataset.end = '1';
+  if (kind) art.dataset.special = kind;
+  art.setAttribute('aria-label', big);
+  if (kicker) body.append(el('p', 'kicker', kicker));
+  body.append(el('h2', 'big', big));
+  lines.forEach(l => {
+    const p = el('p', 'line' + (l.dim ? ' dim' : ''));
+    p.append(rich(l.text || l));
+    body.append(p);
+  });
+  if (actions.length) {
+    const row = el('div', 'actions');
+    actions.forEach(([label, fn, primary]) => {
+      const b = button(primary ? 'next' : 'ghost');
+      b.append(label);
+      if (primary && label === 'Дальше') b.insertAdjacentHTML('beforeend', ICON.down);
+      b.addEventListener('click', fn);
+      row.append(b);
+    });
+    body.append(row);
+  }
+  if (hint) {
+    const p = el('p', 'swipe');
+    p.innerHTML = ICON.up;
+    p.append(hint);
+    body.append(p);
+  }
+  inner.append(body);
+  return art;
+}
+function introCard() {
+  const runs = CARDS.filter(c => c.term).length;
+  return specialCard({
+    h: 189, kind: 'intro', kicker: 'Go к собеседованию', big: 'Go-лента',
+    lines: [
+      CARDS.length + ' ' + plural(CARDS.length, 'карточка', 'карточки', 'карточек') + ' по слабым темам: слайсы, мапы, каналы, горутины, интерфейсы, контекст.',
+      'Листай вверх, отвечай тапом. Ошибка вернётся через пару карточек, потом завтра и через неделю.',
+      { text: 'В коде не показаны `package` и `import`, но они есть. Все ' + runs + ' программ запущены на ' + GO_VERSION + ', вывод в терминале настоящий.', dim: true },
+    ],
+    actions: [['Поехали', () => go(1), true]],
+    hint: 'или листай вверх',
+  });
+}
+function goalCard() {
+  const n = dayStreak();
+  return specialCard({
+    h: 150, kind: 'goal', kicker: 'Цель дня', big: state.goal + ' из ' + state.goal,
+    lines: [
+      'Дней подряд: ' + n + '.',
+      { text: 'Можно остановиться. Или листай дальше: лента не кончается.', dim: true },
+    ],
+    actions: [['Дальше', () => go(1), true]],
+  });
+}
+function summaryCard() {
+  const n = session.answered, r = session.right;
+  let weak = null;
+  Object.entries(session.topicStat).forEach(([t, s]) => {
+    const miss = s.n - s.r;
+    if (miss > 0 && (!weak || miss > weak.miss)) weak = { t, miss, n: s.n, r: s.r };
+  });
+  const lines = [
+    'Верно ' + r + ' из ' + n + '. Лучшая серия: ' + session.best + ' подряд.',
+    weak ? 'Слабее всего: ' + TOPICS[weak.t].name + ' — ' + weak.r + ' из ' + weak.n + '.' : 'Ошибок пока нет.',
+  ];
+  const actions = [['Дальше', () => go(1), true]];
+  if (CARDS.some(c => struggling(c.id))) actions.push(['Разобрать ошибки', () => switchTab('miss'), false]);
+  return specialCard({ h: 252, kind: 'summary', kicker: 'Итог серии', big: n + ' ' + plural(n, 'карточка', 'карточки', 'карточек'), lines, actions });
+}
+function endCard() {
+  const toFeed = [['В ленту', () => switchTab('feed'), true]];
+  if (tab === 'saved') {
+    return specialCard({ h: 336, end: true, kind: 'end', kicker: 'Избранное', big: 'Тут пусто', lines: ['Жми сердце на карточке, и она появится здесь.'], actions: toFeed });
+  }
+  const hadAny = CARDS.some(c => topicOn(c.t) && (struggling(c.id) || session.missOk.has(c.id)));
+  if (tab === 'miss' && hadAny) {
+    return specialCard({ h: 150, end: true, kind: 'end', kicker: 'Ошибки', big: 'Разобрано', lines: ['Каждая карточка вернётся по расписанию. Снова ошибёшься — она опять будет здесь.'], actions: toFeed });
+  }
+  return specialCard({ h: 150, end: true, kind: 'end', kicker: 'Ошибки', big: 'Ошибок нет', lines: ['Сюда попадают карточки, на которых ты ошибся. Листай «Для тебя».'], actions: toFeed });
+}
+
+/* ---------- лента ---------- */
+
+const feed = document.getElementById('feed');
+const io = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting && e.intersectionRatio >= .6) setCurrent(e.target); });
+}, { root: feed, threshold: [.6] });
+
+function mount(art) { io.observe(art); fitCode(art); return art; }
+function insertAfter(ref, art) { ref.after(art); mount(art); }
+function appendNext() {
+  const last = feed.lastElementChild;
+  if (last && last.dataset.end) return false;
+  const c = pickNext();
+  if (!c) { feed.append(mount(endCard())); return true; }
+  session.appended++;
+  session.queued.push(c.id);
+  feed.append(mount(buildCard(c)));
+  return true;
+}
+function ensureAhead() {
+  const all = feed.children;
+  const idx = Array.prototype.indexOf.call(all, current);
+  let ahead = all.length - 1 - idx;
+  while (ahead < 2 && appendNext()) ahead++;
+}
+function setCurrent(art) {
+  if (!art || current === art) return;
+  current = art;
+  const id = art.dataset.id;
+  if (id) session.seen.add(id);
+  ensureAhead();
+}
+function go(delta) {
+  const all = Array.from(feed.children);
+  const target = all[all.indexOf(current) + delta];
+  if (target) feed.scrollTo({ top: target.offsetTop, behavior: reduceMotion ? 'auto' : 'smooth' });
+}
+function rebuild(first) {
+  io.disconnect();
+  feed.replaceChildren();
+  current = null;
+  session.queued = [];
+  if (first instanceof HTMLElement) feed.append(mount(first));
+  else if (first) { session.appended++; session.queued.push(first.id); feed.append(mount(buildCard(first))); }
+  else appendNext();
+  feed.scrollTop = 0;
+  setCurrent(feed.firstElementChild);
+}
+function switchTab(name) {
+  tab = name;
+  if (name === 'miss') session.missOk.clear();
+  document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.tab === name)));
+  rebuild();
+}
+
+/* ---------- верхняя панель, избранное, тосты ---------- */
+
+const ringProg = document.querySelector('.ring .prog');
+function updateBar() {
+  const n = today().n;
+  document.getElementById('ring-n').textContent = n;
+  ringProg.style.strokeDashoffset = String(94.25 * (1 - Math.min(1, n / state.goal)));
+  document.getElementById('btn-stats').setAttribute('aria-label', 'Прогресс: сегодня ' + n + ' из ' + state.goal);
+  const miss = CARDS.filter(c => struggling(c.id)).length;
+  const badge = document.getElementById('miss-n');
+  badge.hidden = !miss;
+  badge.textContent = miss;
+  document.getElementById('btn-topics').classList.toggle('on', state.topics.length > 0);
+}
+function toggleLike(id) {
+  const on = !isLiked(id);
+  state.likes[id] = on ? Date.now() : -Date.now();
+  save();
+  feed.querySelectorAll('.card[data-id="' + id + '"] .like').forEach(b => {
+    setLike(b, on);
+    b.classList.remove('pop');
+    void b.offsetWidth;
+    if (on) b.classList.add('pop');
+  });
+  toast(on ? 'Сохранено в избранное' : 'Убрано из избранного');
+  buzz(8);
+}
+const toastEl = document.getElementById('toast');
+let toastTimer = 0;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('on'), 1800);
+}
+function buzz(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) { /* вибрации может не быть */ } }
+
+/* ---------- шрифт кода под ширину экрана ---------- */
+
+let charW = .6;
+function measureMono() {
+  const s = el('span', null, '0123456789');
+  s.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;font-size:100px;font-family:' +
+    getComputedStyle(document.documentElement).getPropertyValue('--font-mono');
+  document.body.append(s);
+  charW = s.getBoundingClientRect().width / 1000 || .6;
+  s.remove();
+}
+function fitCode(root) {
+  root.querySelectorAll('.code pre').forEach(pre => {
+    const w = pre.clientWidth;
+    if (!w) return;
+    const tab = w >= 420 ? 4 : 2;
+    pre.style.setProperty('--tab', tab);
+    const longest = Math.max(20, ...pre.textContent.split('\n').map(l => l.replace(/\t/g, ' '.repeat(tab)).length));
+    const size = Math.max(11, Math.min(15, (w - 28) / (longest * charW)));
+    pre.style.setProperty('--code-fs', size.toFixed(2) + 'px');
+  });
+}
+
+/* ---------- шторки: темы и прогресс ---------- */
+
+const scrim = document.getElementById('scrim');
+const dTopics = document.getElementById('d-topics');
+const dStats = document.getElementById('d-stats');
+let openDrawer = null;
+function showDrawer(d) {
+  if (openDrawer) openDrawer.hidden = true;
+  openDrawer = d;
+  d.hidden = false;
+  scrim.hidden = false;
+  d.scrollTop = 0;
+  d.focus({ preventScroll: true });
+}
+function hideDrawer() {
+  if (!openDrawer) return;
+  openDrawer.hidden = true;
+  openDrawer = null;
+  scrim.hidden = true;
+}
+scrim.addEventListener('click', hideDrawer);
+function drawerHead(d, title) {
+  const head = el('div', 'd-head');
+  head.append(el('h2', null, title));
+  const x = button('close');
+  x.innerHTML = ICON.close;
+  x.setAttribute('aria-label', 'Закрыть');
+  x.addEventListener('click', hideDrawer);
+  head.append(x);
+  d.append(el('div', 'grip'), head);
+}
+function ava(t) { const a = el('span', 'ava', TOPICS[t].g); a.setAttribute('aria-hidden', 'true'); return a; }
+
+function renderTopics() {
+  dTopics.replaceChildren();
+  drawerHead(dTopics, 'Темы');
+  const pick = new Set(state.topics.length ? state.topics : Object.keys(TOPICS));
+  const chips = el('div', 'chips');
+  Object.entries(TOPICS).forEach(([t, T]) => {
+    const b = button('chip');
+    b.style.setProperty('--h', T.h);
+    b.setAttribute('aria-pressed', String(pick.has(t)));
+    const g = el('span', 'g', T.g);
+    g.setAttribute('aria-hidden', 'true');
+    b.append(g, T.name + ' ', el('small', null, String(CARDS.filter(c => c.t === t).length)));
+    b.addEventListener('click', () => {
+      if (pick.has(t)) pick.delete(t); else pick.add(t);
+      b.setAttribute('aria-pressed', String(pick.has(t)));
+    });
+    chips.append(b);
+  });
+  const row = el('div', 'row2');
+  const all = button('ghost', 'Все темы');
+  all.addEventListener('click', () => {
+    Object.keys(TOPICS).forEach(t => pick.add(t));
+    chips.querySelectorAll('.chip').forEach(b => b.setAttribute('aria-pressed', 'true'));
+  });
+  const done = button('next', 'Показать');
+  done.addEventListener('click', () => {
+    const list = Object.keys(TOPICS).filter(t => pick.has(t));
+    state.topics = list.length === Object.keys(TOPICS).length || !list.length ? [] : list;
+    save();
+    hideDrawer();
+    updateBar();
+    rebuild();
+    toast(state.topics.length ? 'Темы: ' + state.topics.length + ' из ' + Object.keys(TOPICS).length : 'Все темы');
+  });
+  row.append(all, done);
+  const hint = el('p', 'line dim', 'Выключи темы, которые сейчас не нужны. Лента возьмёт карточки только из включённых.');
+  dTopics.append(hint, chips, row);
+}
+
+function preview(c) {
+  if (c.q && c.k !== 'out') return c.q.replace(/`/g, '');
+  return (c.code || c.q || '').split('\n').find(l => l.trim()) || c.id;
+}
+let resetArmed = 0;
+function renderStats() {
+  dStats.replaceChildren();
+  drawerHead(dStats, 'Прогресс');
+  const learned = learnedCount();
+  const level = LEVELS.filter(([n]) => learned >= n).pop()[1];
+  const lv = el('p', 'level');
+  lv.append('Уровень: ', el('b', null, level), ' · выучено ' + learned + ' из ' + CARDS.length);
+  const t = today();
+  let total = 0, right = 0;
+  Object.values(state.days).forEach(d => { total += d.n; right += d.r; });
+  const tiles = el('div', 'tiles');
+  [
+    [t.n + '/' + state.goal, 'сегодня'],
+    [String(dayStreak()), plural(dayStreak(), 'день подряд', 'дня подряд', 'дней подряд')],
+    [total ? Math.round(right / total * 100) + '%' : '—', 'верных ответов'],
+    [String(total), plural(total, 'ответ всего', 'ответа всего', 'ответов всего')],
+  ].forEach(([v, k]) => { const x = el('div', 'tile'); x.append(el('b', null, v), el('span', null, k)); tiles.append(x); });
+
+  const goalSec = el('div', 'd-sec');
+  goalSec.append(el('h3', null, 'Карточек в день'));
+  const seg = el('div', 'seg');
+  [10, 20, 30, 50].forEach(g => {
+    const b = button(null, String(g));
+    b.setAttribute('aria-pressed', String(state.goal === g));
+    b.addEventListener('click', () => { state.goal = g; save(); updateBar(); renderStats(); });
+    seg.append(b);
+  });
+  goalSec.append(seg);
+
+  const topicSec = el('div', 'd-sec');
+  topicSec.append(el('h3', null, 'Темы'));
+  const rows = el('div', 'trows');
+  Object.entries(TOPICS).forEach(([tk, T]) => {
+    const list = CARDS.filter(c => c.t === tk);
+    const done = learnedCount(list);
+    const going = list.filter(c => { const s = st(c.id); return s && s.n > 0 && s.b < LEARNED; }).length;
+    const b = button('trow');
+    b.style.setProperty('--h', T.h);
+    b.setAttribute('aria-label', T.name + ': выучено ' + done + ' из ' + list.length + '. Открыть ленту по теме');
+    const meter = el('span', 'meter');
+    const i1 = el('i'); i1.style.width = (done / list.length * 100) + '%';
+    const i2 = el('i', 'p'); i2.style.width = (going / list.length * 100) + '%';
+    meter.append(i1, i2);
+    b.append(ava(tk), el('span', 'tn', T.name), el('span', 'tc', done + '/' + list.length), meter);
+    b.addEventListener('click', () => {
+      state.topics = [tk];
+      save();
+      hideDrawer();
+      tab = 'feed';
+      document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', String(x.dataset.tab === 'feed')));
+      updateBar();
+      rebuild();
+      toast('Тема: ' + T.name);
+    });
+    rows.append(b);
+  });
+  topicSec.append(rows);
+
+  const hardList = CARDS.filter(c => struggling(c.id)).sort((a, b) => st(b.id).w - st(a.id).w || st(a.id).b - st(b.id).b).slice(0, 6);
+  const hardSec = el('div', 'd-sec');
+  if (hardList.length) {
+    hardSec.append(el('h3', null, 'Где чаще ошибаешься'));
+    const box = el('div', 'hard');
+    hardList.forEach(c => {
+      const b = button();
+      b.append(el('small', null, TOPICS[c.t].name + ' · ошибок: ' + st(c.id).w), el('span', null, preview(c)));
+      b.addEventListener('click', () => { hideDrawer(); rebuild(c); });
+      box.append(b);
+    });
+    hardSec.append(box);
+  }
+
+  const themeSec = el('div', 'd-sec');
+  themeSec.append(el('h3', null, 'Тема оформления'));
+  const tseg = el('div', 'seg');
+  const curTheme = readTheme();
+  [['system', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']].forEach(([v, label]) => {
+    const b = button(null, label);
+    b.setAttribute('aria-pressed', String(curTheme === v));
+    b.addEventListener('click', () => { writeTheme(v); renderStats(); });
+    tseg.append(b);
+  });
+  themeSec.append(tseg);
+
+  const foot = el('div', 'd-foot');
+  foot.append(el('p', null, storageOk
+    ? 'Прогресс хранится в этом браузере, на этом устройстве.'
+    : 'Браузер не даёт сохранять прогресс: после закрытия страницы он пропадёт.'));
+  const reset = button('ghost', 'Сбросить прогресс');
+  reset.addEventListener('click', () => {
+    if (Date.now() - resetArmed > 4000) {
+      resetArmed = Date.now();
+      reset.textContent = 'Точно? Нажми ещё раз';
+      reset.classList.add('danger');
+      return;
+    }
+    resetArmed = 0;
+    const keep = { goal: state.goal };
+    state = Object.assign(blank(), keep);
+    save();
+    hideDrawer();
+    updateBar();
+    rebuild(introCard());
+    toast('Прогресс сброшен');
+  });
+  foot.append(reset);
+  dStats.append(lv, tiles, goalSec, topicSec, hardSec, themeSec, foot);
+}
+
+/* ---------- тема оформления ---------- */
+
+function readTheme() { try { return localStorage.getItem(THEME_KEY) || 'system'; } catch (e) { return 'system'; } }
+function applyTheme(v) {
+  if (v === 'light' || v === 'dark') document.documentElement.dataset.theme = v;
+  else delete document.documentElement.dataset.theme;
+}
+function writeTheme(v) {
+  try { localStorage.setItem(THEME_KEY, v); } catch (e) { /* без хранилища тема живёт до перезагрузки */ }
+  applyTheme(v);
+}
+
+/* ---------- управление ---------- */
+
+document.getElementById('tabs').addEventListener('click', e => {
+  const b = e.target.closest('.tab');
+  if (b && b.dataset.tab !== tab) switchTab(b.dataset.tab);
+  else if (b) rebuild();
+});
+document.getElementById('btn-topics').addEventListener('click', () => { renderTopics(); showDrawer(dTopics); });
+document.getElementById('btn-stats').addEventListener('click', () => { renderStats(); showDrawer(dStats); });
+document.getElementById('nav-up').addEventListener('click', () => go(-1));
+document.getElementById('nav-down').addEventListener('click', () => go(1));
+
+document.addEventListener('keydown', e => {
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  if (openDrawer) { if (e.key === 'Escape') hideDrawer(); return; }
+  if (!current) return;
+  const k = e.key;
+  const id = current.dataset.id;
+  const c = id && byId[id];
+  const done = current.classList.contains('done');
+  if (k === 'ArrowDown' || k === 'PageDown' || k === 'j') { e.preventDefault(); go(1); return; }
+  if (k === 'ArrowUp' || k === 'PageUp' || k === 'k') { e.preventDefault(); go(-1); return; }
+  if ((k === 'l' || k === 'L' || k === 'д' || k === 'Д') && c) { toggleLike(c.id); return; }
+  if (k === 'Enter' || k === ' ') {
+    if (e.target.closest && e.target.closest('button') && k === ' ') return;
+    e.preventDefault();
+    if (c && c.k === 'qa' && !current.classList.contains('revealed')) revealQA(current, c);
+    else if (!c || done) go(1);
+    return;
+  }
+  if (/^[1-4]$/.test(k) && c && !done) {
+    const n = Number(k) - 1;
+    const sel = c.k === 'tf' ? '.tf .opt' : c.k === 'qa' ? '.grades .opt' : '.opts .opt';
+    const b = current.querySelectorAll(sel)[n];
+    if (b) b.click();
+  }
+});
+
+let resizeTimer = 0;
+addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => fitCode(feed), 120); });
+
+/* ---------- старт ---------- */
+
+applyTheme(readTheme());
+updateBar();
+measureMono();
+const deep = byId[decodeURIComponent(location.hash.slice(1))];
+if (deep) rebuild(deep);
+else if (!Object.keys(state.c).length) rebuild(introCard());
+else rebuild();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measureMono(); fitCode(feed); });
+
+})();
+</script>
+</body>
+</html>
